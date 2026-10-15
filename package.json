@@ -8,10 +8,11 @@
   "scripts": {
     "dev": "concurrently -k -n db,api,web \"npm:emulator\" \"npm:dev:api\" \"npm -w client run dev\"",
     "emulator": "firebase emulators:start --only firestore --project demo-drmacx",
-    "dev:api": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8085 GOOGLE_CLOUD_PROJECT=demo-drmacx npm -w server run dev",
+    "dev:api": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8085 GOOGLE_CLOUD_PROJECT=demo-drmacx sh -c \"npm run seed && npm -w server run dev\"",
     "build": "npm -w client run build",
     "start": "npm -w server start",
-    "test": "npm -w server test"
+    "test": "npm -w server test",
+    "seed": "npm -w server run seed"
   },
   "devDependencies": {
     "concurrently": "^10.0.6",

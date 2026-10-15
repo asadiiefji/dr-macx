@@ -1,8 +1,8 @@
 import { Link as RouterLink } from 'react-router';
 import { Alert, Box, Card, CardContent, Grid, Link, Stack, Typography } from '@mui/material';
 import { useLive } from '../api.js';
-import { PageHeader, StatusChip, FactorBar, Mono, pct, num, duration, time } from '../ui.jsx';
-import { FACTORS, MONO, OEE_COLOR, STATUS } from '../theme.js';
+import { PageHeader, StatusChip, FactorBar, LevelChip, Mono, pct, num, duration, time } from '../ui.jsx';
+import { C, FACTORS, KPIS, LEVELS, MONO, STATUS, level } from '../theme.js';
 
 export function ShiftLine({ live }) {
   return (
@@ -12,14 +12,35 @@ export function ShiftLine({ live }) {
   );
 }
 
-function Kpi({ label, value, color, big }) {
+// value is a 0..1 ratio; target = { target, margin } in % from the machine's master data (none = no judgement).
+export function Kpi({ label, value, big, target }) {
+  const k = level(value, target);
+  const gap = k ? value * 100 - target.target : null;
   return (
-    <Card sx={{ height: '100%', borderTop: `4px solid ${color}` }}>
+    <Card sx={{ height: '100%', borderTop: `4px solid ${k ? LEVELS[k].bar : C.blue}` }}>
       <CardContent>
         <Typography variant="overline" component="div">{label}</Typography>
-        <Typography sx={{ fontFamily: MONO, fontWeight: 600, fontSize: big ? 44 : 32, lineHeight: 1.1 }}>{value}</Typography>
+        <Typography sx={{ fontWeight: 800, fontSize: big ? 42 : 32, lineHeight: 1.1, letterSpacing: '-0.02em', color: k ? LEVELS[k].color : C.ink }}>{pct(value)}</Typography>
+        {k && <Box mt={1}><LevelChip value={value} target={target} /></Box>}
+        {target && (
+          <Typography variant="body2" color="text.secondary" mt={0.5}>
+            Target {target.target}% · tolerance {target.margin} pts{gap != null && <> · <b>{gap >= 0 ? '+' : '−'}{Math.abs(gap).toFixed(1)} pts</b></>}
+          </Typography>
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+export function KpiRow({ values, targets, overline }) {
+  return (
+    <Grid container spacing={2}>
+      {KPIS.map((k, i) => (
+        <Grid key={k.key} size={{ xs: 12, sm: 6, md: 3 }}>
+          <Kpi big={i === 0} label={`${k.label.toUpperCase()}${i === 0 && overline ? ` · ${overline}` : ''}`} value={values?.[k.key]} target={targets?.[k.key]} />
+        </Grid>
+      ))}
+    </Grid>
   );
 }
 
@@ -42,12 +63,7 @@ export default function Dashboard() {
         </Alert>
       )}
 
-      <Grid container spacing={2} mb={2}>
-        <Grid size={{ xs: 12, md: 3 }}><Kpi big label="PLANT OEE · THIS SHIFT" value={pct(plant.oee)} color={OEE_COLOR} /></Grid>
-        {FACTORS.map((f) => (
-          <Grid key={f.key} size={{ xs: 12, sm: 4, md: 3 }}><Kpi label={f.label.toUpperCase()} value={pct(plant[f.key])} color={f.color} /></Grid>
-        ))}
-      </Grid>
+      <Box mb={2}><KpiRow values={plant} overline="PLANT · THIS SHIFT" /></Box>
 
       <Grid container spacing={2} mb={2}>
         <Grid size={{ xs: 12, md: 6 }}>
@@ -70,7 +86,7 @@ export default function Dashboard() {
             <CardContent>
               <Typography variant="h6" component="h2" mb={2}>Output · this shift</Typography>
               <Stack direction="row" spacing={4} flexWrap="wrap">
-                {[['Total', plant.total], ['Good', plant.good], ['NG', plant.ng]].map(([l, v]) => (
+                {[['Total', plant.total], ['Good', plant.good], ['NC', plant.ng]].map(([l, v]) => (
                   <Box key={l}>
                     <Typography variant="overline" component="div">{l.toUpperCase()}</Typography>
                     <Typography sx={{ fontFamily: MONO, fontSize: 32, fontWeight: 600 }}>{num(v)}</Typography>
@@ -96,12 +112,13 @@ export default function Dashboard() {
                       <Box><Mono fontWeight={600}>{m.code}</Mono> · {m.name}</Box>
                       <Stack direction="row" spacing={1.5} alignItems="center">
                         <StatusChip status={m.status} />
-                        <Typography sx={{ fontFamily: MONO, fontWeight: 700, color: OEE_COLOR, minWidth: 64, textAlign: 'right' }}>{pct(m.oee)}</Typography>
+                        <LevelChip value={m.oee} target={m.targets.oee} />
+                        <Typography sx={{ fontWeight: 800, minWidth: 64, textAlign: 'right' }}>OEE {pct(m.oee)}</Typography>
                       </Stack>
                     </Stack>
                     <Grid container spacing={2}>
                       {FACTORS.map((f) => (
-                        <Grid key={f.key} size={{ xs: 12, sm: 4 }}><FactorBar label={f.label} value={m[f.key]} color={f.color} /></Grid>
+                        <Grid key={f.key} size={{ xs: 12, sm: 4 }}><FactorBar label={f.label} value={m[f.key]} target={m.targets[f.key]} /></Grid>
                       ))}
                     </Grid>
                   </Box>

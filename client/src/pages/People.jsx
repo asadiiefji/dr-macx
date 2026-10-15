@@ -15,13 +15,13 @@ const ROLES = [
   { value: 'operator', label: 'Operator' },
 ];
 
-function MasterPage({ col, title, noun, fields, columns, sortKey, note }) {
+export function MasterPage({ col, title, noun, fields, columns, sortKey, note, section }) {
   const { rows, error, reload } = useCollection(col);
   const [edit, setEdit] = useState(null); // form values, id set when editing
   const [formError, setFormError] = useState('');
   const blank = Object.fromEntries(fields.map((f) => [f.key, f.default ?? '']));
 
-  const open = (row) => (setFormError(''), setEdit(row ? { ...blank, ...row } : blank));
+  const open = (row) => (setFormError(''), setEdit(row ? { ...blank, ...Object.fromEntries(Object.entries(row).map(([k, v]) => [k, v ?? ''])) } : blank));
   const save = async () => {
     try {
       await api(edit.id ? `/${col}/${edit.id}` : `/${col}`, { method: edit.id ? 'PUT' : 'POST', body: edit });
@@ -32,17 +32,23 @@ function MasterPage({ col, title, noun, fields, columns, sortKey, note }) {
     }
   };
   const remove = async (row) => {
-    if (!window.confirm(`Delete ${noun.toLowerCase()} ${row.name}?`)) return;
+    if (!window.confirm(`Delete ${noun.toLowerCase()} ${row.name ?? row[sortKey]}?`)) return;
     await api(`/${col}/${row.id}`, { method: 'DELETE' }).catch((e) => alert(e.message));
     reload();
   };
 
-  const sorted = [...rows].sort((a, b) => String(a[sortKey]).localeCompare(String(b[sortKey])));
+  const sorted = [...rows].sort((a, b) => String(a[sortKey]).localeCompare(String(b[sortKey]), undefined, { numeric: true }));
+  const add = <Button variant="contained" color="secondary" startIcon={<AddIcon />} onClick={() => open()}>Add {noun.toLowerCase()}</Button>;
   return (
     <>
-      <PageHeader overline="MASTER DATA" title={title}>
-        <Button variant="contained" color="secondary" startIcon={<AddIcon />} onClick={() => open()}>Add {noun.toLowerCase()}</Button>
-      </PageHeader>
+      {section ? (
+        <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2} mb={2}>
+          <Typography variant="h6" component="h2">{title}</Typography>
+          {add}
+        </Stack>
+      ) : (
+        <PageHeader overline="MASTER DATA" title={title}>{add}</PageHeader>
+      )}
       {note && <Alert severity="info" sx={{ mb: 2 }}>{note}</Alert>}
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       <TableContainer component={Card}>
@@ -50,7 +56,7 @@ function MasterPage({ col, title, noun, fields, columns, sortKey, note }) {
           <TableHead>
             <TableRow>
               {columns.map((c) => <TableCell key={c.key}>{c.label}</TableCell>)}
-              <TableCell>Status</TableCell>
+              {!section && fields.some((f) => f.key === 'active') && <TableCell>Status</TableCell>}
               <TableCell align="right" aria-label="Actions" />
             </TableRow>
           </TableHead>
@@ -58,9 +64,9 @@ function MasterPage({ col, title, noun, fields, columns, sortKey, note }) {
             {sorted.map((r) => (
               <TableRow key={r.id} hover onClick={() => open(r)} sx={{ cursor: 'pointer' }}>
                 {columns.map((c) => <TableCell key={c.key}>{c.render ? c.render(r) : r[c.key]}</TableCell>)}
-                <TableCell>{r.active ? 'Active' : 'Inactive'}</TableCell>
+                {!section && fields.some((f) => f.key === 'active') && <TableCell>{r.active ? 'Active' : 'Inactive'}</TableCell>}
                 <TableCell align="right">
-                  <IconButton aria-label={`Delete ${r.name}`} onClick={(e) => (e.stopPropagation(), remove(r))}><DeleteIcon /></IconButton>
+                  <IconButton aria-label={`Delete ${r.name ?? r[sortKey]}`} onClick={(e) => (e.stopPropagation(), remove(r))}><DeleteIcon /></IconButton>
                 </TableCell>
               </TableRow>
             ))}
@@ -88,7 +94,7 @@ function MasterPage({ col, title, noun, fields, columns, sortKey, note }) {
                     <TextField
                       key={f.key}
                       label={f.label}
-                      type={f.type === 'email' ? 'email' : 'text'}
+                      type={f.type ?? 'text'}
                       select={!!f.options}
                       required={f.required}
                       helperText={f.help}

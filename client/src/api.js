@@ -12,15 +12,25 @@ export async function api(path, { method = 'GET', body } = {}) {
   return data;
 }
 
-export function useCollection(col) {
-  const [rows, setRows] = useState([]);
+// GET a path; refetches when the path changes. path null = skip.
+export function useGet(path) {
+  const [data, setData] = useState(null);
   const [error, setError] = useState('');
-  const reload = useCallback(
-    () => api(`/${col}`).then((r) => (setRows(r), setError('')), (e) => setError(e.message)),
-    [col],
-  );
+  const [loading, setLoading] = useState(false);
+  const reload = useCallback(() => {
+    if (!path) return;
+    setLoading(true);
+    return api(path)
+      .then((d) => (setData(d), setError('')), (e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [path]);
   useEffect(() => void reload(), [reload]);
-  return { rows, error, reload };
+  return { data, error, loading, reload };
+}
+
+export function useCollection(col) {
+  const { data, error, reload } = useGet(`/${col}`);
+  return { rows: data ?? [], error, reload };
 }
 
 // ponytail: 2 s polling; switch to SSE if many viewers or sub-second updates are needed.

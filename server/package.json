@@ -4,14 +4,16 @@
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "dev": "node --watch index.js",
-    "test": "node --test"
+    "dev": "node --env-file-if-exists=../.env --watch index.js",
+    "test": "node --test",
+    "seed": "node seed.js"
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
     "@google-cloud/firestore": "^9.3.1",
+    "@google/genai": "^2.30.0",
     "express": "^5.3.0"
   }
 }
