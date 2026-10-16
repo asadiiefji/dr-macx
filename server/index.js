@@ -8,6 +8,7 @@ import { withReasons, markRepeats, downtimeStats, REPEAT, pointsFor } from './an
 import { analyze, suggestReason, chat, explain, aiStatus, MODEL, GEMMA_MODEL } from './ai.js';
 import { SENSORS, SETUPS, FRAMES, CURRENT } from './sensors.js';
 import { soulRoutes } from './soul.js';
+import { startBrain } from './brain.js';
 import { LANGUAGES } from './ai.js';
 
 const db = new Firestore({ ignoreUndefinedProperties: true });
@@ -322,6 +323,7 @@ app.post('/api/machines/:id/chat', async (req, res) => {
 // --- Machine Soul kiosk (soul.js) ---
 app.get('/api/languages', (req, res) => res.json(LANGUAGES));
 const soul = soulRoutes(app, { db, live, list, resolve, eventsSince, repeatWindowMs: REPEAT.windowMs });
+startBrain({ db, live, say: soul.say, context: soul.context, resolve });
 
 // --- Master data CRUD: machines, operators, users, reasons ---
 app.use('/api/:col', (req, res, next) => (schemas[req.params.col] ? next() : res.status(404).json({ error: 'Not found.' })));

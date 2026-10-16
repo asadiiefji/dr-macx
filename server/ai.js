@@ -224,11 +224,12 @@ const ASK_SCHEMA = {
 };
 
 // "Ask Gemini" on the kiosk: read my sensors, recent sensor trend (BigQuery) and stops; tell what is going on.
-export async function soulAsk(context, lang) {
+// focus = an extra instruction for what to talk about (e.g. a stop that just happened).
+export async function soulAsk(context, lang, focus) {
   const res = await track('gemini', () => gemini().models.generateContent({
     model: MODEL,
     contents: JSON.stringify(context),
-    config: { systemInstruction: soulVoice(lang), responseMimeType: 'application/json', responseJsonSchema: ASK_SCHEMA, temperature: 0.4 },
+    config: { systemInstruction: focus ? `${soulVoice(lang)}\n${focus}` : soulVoice(lang), responseMimeType: 'application/json', responseJsonSchema: ASK_SCHEMA, temperature: 0.4 },
   }));
   return JSON.parse(res.text);
 }

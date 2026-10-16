@@ -212,3 +212,35 @@ test('per-minute telemetry row for BigQuery', async () => {
   const row = minuteRow(a, m, 'normal');
   assert.deepEqual([row.run_sec, row.idle_sec, row.parts, row.nc, row.tonnage_avg.length, row.vib_motor], [40, 20, 40, 2, 0, null]);
 });
+
+test('soul: target risk, hourly surprise and sensor anomalies', async () => {
+  const { targetRisk, surpriseCheck, anomalies, anomalyText } = await import('./soulRules.js');
+  const { pressDefaults, sensorsFor } = await import('./sensors.js');
+  // 4 h in, 1,500 good of a 4,800 shift plan (85 % target = 4,080): at this pace ~3,000 by shift end.
+  const row = { total: 1550, ng: 50, plannedSec: 4 * 3600, idealCycleTime: 6, plan: { toNow: 2400, shift: 4800 }, targets: { oee: { target: 85 } } };
+  const r = targetRisk(row);
+  assert.equal(r.atRisk, true);
+  assert.equal(r.target, 4080);
+  assert.equal(r.projected, 3000);
+  assert.equal(targetRisk({ ...row, total: 3050 }).atRisk, false); // 3,000 good: on pace for 6,000
+  assert.equal(targetRisk({ ...row, plannedSec: 600 }), null); // too early in the shift to judge
+
+  const prev = [{ plannedSec: 3600, total: 500, ng: 0 }, { plannedSec: 3600, total: 520, ng: 20 }];
+  assert.equal(surpriseCheck({ plannedSec: 3600, total: 310, ng: 0 }, prev).surprise, true); // expected 500, got 310
+  assert.equal(surpriseCheck({ plannedSec: 3600, total: 450, ng: 0 }, prev).surprise, false); // 90 %
+  assert.equal(surpriseCheck({ plannedSec: 3600, total: 10, ng: 0 }, []), null); // no history yet
+
+  const m = pressDefaults({ setup: 'premium', frameType: 'straight-side', ratedTonnage: 400, nodes: 4, nodeTolerancePct: 5 });
+  const status = Object.fromEntries(sensorsFor(m).map((s) => [s.id, 'ok']));
+  const press = { ...m, readings: { tonnage: [100, 100, 100, 110] }, sensorStatus: { ...status, tonnage4: 'warn' } };
+  const mem = { since: {}, spoke: {} };
+  assert.equal(anomalies(press, mem, 0).length, 0); // must hold 30 s first
+  const [a] = anomalies(press, mem, 31e3);
+  assert.equal(a.sensor.node, 4);
+  assert.equal(a.value, 110);
+  assert.match(anomalyText(m, a.sensor, a.value, a.state), /node 4 \(left rear\) reads 110\.0 tons, 10 percent above/);
+  assert.equal(anomalies(press, mem, 60e3).length, 0); // said already
+  assert.equal(anomalies({ ...press, sensorStatus: { ...status, tonnage4: 'alarm' } }, mem, 90e3).length, 1); // escalated
+  assert.equal(anomalies({ ...press, sensorStatus: status }, mem, 100e3).length, 0);
+  assert.equal(mem.since.tonnage4, undefined); // back to ok resets the hold
+});

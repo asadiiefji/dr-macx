@@ -59,6 +59,9 @@ export function ownReadings(m, r) {
   return Object.fromEntries(Object.entries(r).filter(([k]) => ids.has(k)));
 }
 
+// Where each tonnage node sits, seen from the operator side.
+export const NODE_PLACE = { 1: 'left front', 2: 'right front', 3: 'right rear', 4: 'left rear' };
+
 // Nominal load per tonnage node, e.g. 400 t over 4 nodes = 100 t each.
 export const nodeNominal = (m) => m.ratedTonnage / m.nodes;
 

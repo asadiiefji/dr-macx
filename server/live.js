@@ -56,7 +56,7 @@ export function startLive(db) {
   function ensure(m, now) {
     let s = state.get(m.id);
     if (!s) {
-      s = { gen: newDummy(), rec: newRecorder(), tags: null, readings: null, status: null, since: now, ready: false, pending: [], recent: [], manualNc: 0, agg: null, rows: [] };
+      s = { gen: newDummy(), rec: newRecorder(), tags: null, readings: null, status: null, since: now, ready: false, pending: [], recent: [], manualNc: 0, agg: null, rows: [], trail: [] };
       state.set(m.id, s);
       // Stops waiting for an operator to confirm the reason, kept live for the monitoring cards.
       s.unwatch = watch(db.collection(`machines/${m.id}/downtime`).where('confirmed', '==', false), (snap) => {
@@ -93,6 +93,9 @@ export function startLive(db) {
       const prevReject = s.tags?.rejectCount;
       s.tags = s.readings && toOeeTags(m, s.readings, s.manualNc);
       if (s.readings) {
+        // the last 3 minutes of readings, so a stop can be explained by what the sensors saw just before it
+        s.trail.push({ at: now, ...ownReadings(m, s.readings) });
+        if (s.trail.length > 180) s.trail.shift();
         // per-minute sensor summary for BigQuery
         const minute = minuteOf(now);
         if (s.agg && s.agg.start !== minute) s.rows.push(minuteRow(s.agg, m, s.gen.mode));
@@ -200,5 +203,5 @@ export function startLive(db) {
     return true;
   }
 
-  return { snapshot, flush, simulate, addNc, settings: () => settings, pending: (id) => state.get(id)?.pending ?? [] };
+  return { snapshot, flush, simulate, addNc, settings: () => settings, pending: (id) => state.get(id)?.pending ?? [], trail: (id) => state.get(id)?.trail ?? [] };
 }
