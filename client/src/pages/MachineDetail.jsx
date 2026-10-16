@@ -11,6 +11,7 @@ import { ShiftLine, KpiRow } from './Dashboard.jsx';
 import SensorTable, { NcEntry } from '../SensorTable.jsx';
 import { SETUP_TEXT } from '../sensors.js';
 import History from './History.jsx';
+import Anatomy from '../anatomy/Anatomy.jsx';
 import Downtime from './Downtime.jsx';
 
 const DAY = 86400e3;
@@ -63,9 +64,10 @@ export default function MachineDetail() {
         <Tab label="Live" />
         <Tab label="OEE history" />
         <Tab label="Downtime & AI analysis" />
+        <Tab label="Anatomy" />
       </Tabs>
 
-      {tab > 0 && (
+      {tab > 0 && tab < 3 && (
         <Card sx={{ mb: 3 }}>
           <CardContent>
             <Stack direction="row" flexWrap="wrap" gap={2} alignItems="center">
@@ -93,6 +95,7 @@ export default function MachineDetail() {
 
       {tab === 0 && <LiveTab m={m} master={master} live={live} />}
       {tab === 1 && !badRange && <History id={id} range={range} onShift={(shift) => setF({ ...f, shift })} />}
+      {tab === 3 && <Anatomy m={m} title={`${m.code} anatomy`} height={560} />}
       {tab === 2 && !badRange && <Downtime id={id} code={m.code} range={range} />}
     </>
   );

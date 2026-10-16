@@ -21,6 +21,8 @@ import { NcEntry } from '../SensorTable.jsx';
 import { MOTOR, sensorsFor, useSensorCatalog, valueOf } from '../sensors.js';
 import PressCharacter, { EMOTIONS } from './PressCharacter.jsx';
 import { BCP, useVoice } from './useVoice.js';
+import Anatomy from '../anatomy/Anatomy.jsx';
+import BuildIcon from '@mui/icons-material/PrecisionManufacturingOutlined';
 
 const SESSION = 'drmacx.soul';
 const load = () => {
@@ -181,6 +183,7 @@ function Main({ session, onChange, onExit }) {
 
   const emotion = emotionOf(row, now);
   const question = messages.data?.find((m) => m.needsAnswer && !m.answered);
+  const alarming = Object.values(row.sensorStatus ?? {}).some((v) => v === 'warn' || v === 'alarm');
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: 'background.default', p: { xs: 1.5, md: 2.5 } }}>
       <Grid container spacing={2}>
@@ -206,6 +209,11 @@ function Main({ session, onChange, onExit }) {
                     <Tooltip title={voiceOn ? 'Mute my voice' : 'Turn my voice on'}>
                       <IconButton aria-label={voiceOn ? 'Mute voice' : 'Turn voice on'} onClick={() => onChange({ ...session, voice: !voiceOn })} sx={{ border: `1px solid ${C.line}` }}>
                         {voiceOn ? <VolumeUpIcon /> : <VolumeOffIcon />}
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Show my anatomy (where my sensors are)">
+                      <IconButton aria-label="Show anatomy" aria-pressed={!!session.anatomy} onClick={() => onChange({ ...session, anatomy: !session.anatomy })} sx={{ border: `1px solid ${C.line}`, bgcolor: session.anatomy ? C.light : undefined }}>
+                        <BuildIcon />
                       </IconButton>
                     </Tooltip>
                     <Tooltip title="Sign out / change press">
@@ -240,7 +248,7 @@ function Main({ session, onChange, onExit }) {
                 </Card>
               </Grid>
               <Grid size={{ xs: 12, sm: 5 }}>
-                <SaidList messages={messages.data} onReplay={(m) => voice.say(m.text)} />
+                <SaidList messages={messages.data} onReplay={(m) => voice.say(m.text)} onShow={(lit) => onChange({ ...session, anatomy: true, lit })} />
               </Grid>
             </Grid>
 
@@ -252,6 +260,12 @@ function Main({ session, onChange, onExit }) {
         <Grid size={{ xs: 12, md: 5 }}>
           <Stack spacing={2}>
             <EventSummary row={row} master={master} now={now} reasons={reasons.rows} question={question} />
+            {(alarming || session.anatomy) && (
+              <Box>
+                <Anatomy m={row} lit={session.lit ?? undefined} title="My anatomy" height={380} />
+                {session.lit && <Button size="small" onClick={() => onChange({ ...session, lit: null })} sx={{ mt: 0.5 }}>Back to my live sensors</Button>}
+              </Box>
+            )}
             <Talk machineId={machineId} operator={operator} lang={lang} question={question} onDone={messages.reload} />
             {row.setup === 'essential' && (
               <Card>
@@ -272,7 +286,7 @@ function Main({ session, onChange, onExit }) {
 
 const KIND = { advice: 'Advice', report: 'Report', operator: 'You said', stop: 'Stop', risk: 'Target risk', surprise: 'Question', anomaly: 'Sensor alert', cycleTime: 'Cycle time', handover: 'Handover', info: 'Info' };
 
-function SaidList({ messages, onReplay }) {
+function SaidList({ messages, onReplay, onShow }) {
   return (
     <Card sx={{ height: { xs: 'auto', sm: 430 }, display: 'flex', flexDirection: 'column' }}>
       <CardContent sx={{ pb: 1 }}>
@@ -293,6 +307,11 @@ function SaidList({ messages, onReplay }) {
                 )}
               </Stack>
               <Typography variant="body2">{m.text}</Typography>
+              {(m.data?.part || m.data?.node) && (
+                <Button size="small" onClick={() => onShow({ part: m.data.node ? 'loadCell' : m.data.part, node: m.data.node || null })} sx={{ minHeight: 28, px: 0.5 }}>
+                  Show on my anatomy
+                </Button>
+              )}
               {m.data?.actions?.length > 0 && (
                 <Box component="ul" sx={{ m: 0, mt: 0.5, pl: 2.5 }}>
                   {m.data.actions.map((a, i) => <Typography key={i} component="li" variant="caption" color="text.secondary">{a}</Typography>)}

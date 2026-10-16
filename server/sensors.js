@@ -6,9 +6,9 @@ export const SETUPS = ['essential', 'premium'];
 export const FRAMES = ['c-frame', 'straight-side'];
 
 export const SENSORS = [
-  { id: 'laserEye', setup: 'essential', label: 'Laser eye (photoelectric) at exit chute', short: 'Part count', unit: 'pcs', part: 'exitChute', tag: 'LaserEye.PartCount', feeds: 'Performance' },
+  { id: 'laserEye', setup: 'essential', label: 'Laser eye (photoelectric) at exit chute', short: 'Part count', unit: 'pcs', part: 'laserEye', tag: 'LaserEye.PartCount', feeds: 'Performance' },
   { id: 'motorCurrent', setup: 'essential', label: 'Clip-on current sensor, main drive motor', short: 'Motor current', unit: 'A', part: 'motor', tag: 'Motor.Current', feeds: 'Availability' },
-  { id: 'alarm', setup: 'essential', label: 'PLC alarm word', short: 'Alarm code', unit: '', part: 'controlPanel', tag: 'PLC.AlarmCode', feeds: 'Stop reasons' },
+  { id: 'alarm', setup: 'essential', label: 'PLC alarm word', short: 'Alarm code', unit: '', part: 'plc', tag: 'PLC.AlarmCode', feeds: 'Stop reasons' },
   { id: 'tonnage', setup: 'premium', perNode: true, label: 'Tonnage monitor (load cell)', short: 'Tonnage', unit: 't', part: 'loadCell', tag: 'Tonnage.Node', feeds: 'Quality risk, maintenance' },
   { id: 'vibMotor', setup: 'premium', label: 'Vibration, main motor', short: 'Motor vibration', unit: 'mm/s', part: 'motor', tag: 'Vibration.Motor', warn: 4.5, alarm: 7.1 },
   { id: 'vibGearbox', setup: 'premium', label: 'Vibration, main gearbox', short: 'Gearbox vibration', unit: 'mm/s', part: 'gearbox', tag: 'Vibration.Gearbox', warn: 4.5, alarm: 7.1 },
