@@ -10,6 +10,14 @@ export const MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 // Gemma 4 on Vertex is a managed (MaaS) model with its own ID.
 export const GEMMA_MODEL = process.env.GEMMA_MODEL || (VERTEX ? 'gemma-4-26b-a4b-it-maas' : 'gemma-4-26b-a4b-it');
 const VIA = VERTEX ? `Vertex AI (${VERTEX_LOCATION})` : 'Gemini API';
+// GCP_PROJECT wins: local dev points GOOGLE_CLOUD_PROJECT at the Firestore emulator's demo project.
+const PROJECT = process.env.GCP_PROJECT || process.env.GOOGLE_CLOUD_PROJECT;
+
+// Kiosk languages (Machine Soul): code -> name Gemini writes in.
+export const LANGUAGES = {
+  en: 'English', id: 'Bahasa Indonesia', ms: 'Bahasa Melayu', vi: 'Tiếng Việt', th: 'Thai', fil: 'Filipino',
+  ja: 'Japanese', ko: 'Korean', zh: 'Simplified Chinese', hi: 'Hindi',
+};
 
 function notConfigured(message) {
   const e = new Error(message);
@@ -61,7 +69,7 @@ export function aiStatus() {
 // Project and location are passed explicitly: otherwise, with GEMINI_API_KEY also set, the SDK would call Vertex in
 // "express mode" with that key, billed to the AI Studio prepay credit instead of the Cloud account.
 function client(name) {
-  if (VERTEX) return new GoogleGenAI({ vertexai: true, project: process.env.GOOGLE_CLOUD_PROJECT, location: VERTEX_LOCATION });
+  if (VERTEX) return new GoogleGenAI({ vertexai: true, project: PROJECT, location: VERTEX_LOCATION });
   if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY)
     throw notConfigured(`${name} is not configured. Set GEMINI_API_KEY in .env, or GOOGLE_GENAI_USE_VERTEXAI=true on Cloud Run.`);
   return new GoogleGenAI({ vertexai: false });
@@ -188,4 +196,85 @@ export async function chat(context, messages) {
     config: { systemInstruction: CHAT, temperature: 0.4 },
   }));
   return res.text;
+}
+
+// --- Machine Soul: the press speaks for itself, in the kiosk's language ---
+
+const soulVoice = (lang) => `You are the soul of one stamping press, speaking to the operator standing next to it.
+Speak in first person ("I", "my node 2", "my motor"), warm and calm, like a colleague. Write in ${LANGUAGES[lang] ?? 'English'}.
+Use only the data given; quote real numbers (tonnage per node vs nominal, vibration, temperatures, counts, times).
+Never invent sensors the press does not have: an Essential press only knows its part count, motor current and PLC alarm.
+"sensorStatus" says ok / warn / alarm per sensor; tonnage nodes are judged against nominal ± tolerance.
+"say" is spoken aloud by text-to-speech: 2-4 short sentences, plain text, no lists, no symbols that read badly aloud.`;
+
+const ASK_SCHEMA = {
+  type: 'object',
+  properties: {
+    say: { type: 'string', description: 'What I say aloud now: my condition and the most important advice.' },
+    findings: {
+      type: 'array',
+      description: 'What the sensors and history show (max 4).',
+      items: { type: 'object', properties: { part: { type: 'string', description: 'Press part, e.g. "tonnage node 2", "main motor", "lube line"' }, finding: { type: 'string' } }, required: ['part', 'finding'] },
+    },
+    actions: { type: 'array', items: { type: 'string' }, description: 'Concrete next steps for the operator or maintenance (max 4).' },
+    part: { type: 'string', description: 'Anatomy part id most involved: motor, gearbox, lubeLine, loadCell, camera, microphone, ioModule, exitChute, controlPanel, or empty.' },
+    node: { type: 'integer', description: 'Tonnage node number if one node is involved, else 0.' },
+  },
+  required: ['say', 'findings', 'actions'],
+};
+
+// "Ask Gemini" on the kiosk: read my sensors, recent sensor trend (BigQuery) and stops; tell what is going on.
+export async function soulAsk(context, lang) {
+  const res = await track('gemini', () => gemini().models.generateContent({
+    model: MODEL,
+    contents: JSON.stringify(context),
+    config: { systemInstruction: soulVoice(lang), responseMimeType: 'application/json', responseJsonSchema: ASK_SCHEMA, temperature: 0.4 },
+  }));
+  return JSON.parse(res.text);
+}
+
+const EXPLAIN_SCHEMA = {
+  type: 'object',
+  properties: {
+    say: { type: 'string', description: 'My spoken reply to the operator: what I understood and what I think caused it.' },
+    summary: { type: 'string', description: 'One-sentence report in English for the history.' },
+    likelyCause: { type: 'string' },
+    actions: { type: 'array', items: { type: 'string' } },
+    part: { type: 'string', description: 'Anatomy part id most involved, or empty.' },
+    node: { type: 'integer', description: 'Tonnage node number if one node is involved, else 0.' },
+    reasonCode: { type: 'string', description: 'Downtime reason code from "reasons" that fits the latest stop, or empty.' },
+  },
+  required: ['say', 'summary', 'likelyCause', 'actions'],
+};
+
+// "Explain by voice": the operator tells what happened (any language); check it against my data.
+export async function soulExplain(context, statement, lang) {
+  const res = await track('gemini', () => gemini().models.generateContent({
+    model: MODEL,
+    contents: JSON.stringify({ ...context, operatorSays: statement }),
+    config: {
+      systemInstruction: `${soulVoice(lang)}\nThe operator just told you what happened ("operatorSays", may be in any language). Check it against your data, say whether the data agrees, and name the likely cause.`,
+      responseMimeType: 'application/json',
+      responseJsonSchema: EXPLAIN_SCHEMA,
+      temperature: 0.3,
+    },
+  }));
+  return JSON.parse(res.text);
+}
+
+// Translate my English messages for a kiosk in another language (kept short, spoken aloud).
+export async function translateTexts(texts, lang) {
+  if (!texts.length) return [];
+  const res = await track('gemini', () => gemini().models.generateContent({
+    model: MODEL,
+    contents: JSON.stringify(texts),
+    config: {
+      systemInstruction: `Translate each string of the JSON array into ${LANGUAGES[lang]}. Keep numbers, units and codes. Keep the first-person voice of a machine talking to its operator. Return a JSON array of the same length.`,
+      responseMimeType: 'application/json',
+      responseJsonSchema: { type: 'array', items: { type: 'string' } },
+      temperature: 0.1,
+    },
+  }));
+  const out = JSON.parse(res.text);
+  return out.length === texts.length ? out : texts;
 }

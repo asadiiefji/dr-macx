@@ -15,6 +15,8 @@ import { Operators, Users } from './pages/People.jsx';
 
 // 3D bundle (three.js) loads only when the 3D Floor page is opened.
 const Floor = lazy(() => import('./pages/Floor.jsx'));
+// Machine Soul kiosk (3D character) runs full screen, outside the side menu.
+const Soul = lazy(() => import('./soul/Soul.jsx'));
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
@@ -22,6 +24,7 @@ createRoot(document.getElementById('root')).render(
       <CssBaseline />
       <BrowserRouter>
         <Routes>
+          <Route path="soul" element={<Suspense fallback={<LinearProgress />}><Soul /></Suspense>} />
           <Route element={<Layout />}>
             <Route index element={<Dashboard />} />
             <Route path="monitoring" element={<Monitoring />} />

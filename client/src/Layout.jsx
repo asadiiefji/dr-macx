@@ -12,13 +12,14 @@ import ShieldIcon from '@mui/icons-material/AdminPanelSettingsOutlined';
 import TuneIcon from '@mui/icons-material/TuneOutlined';
 import ReasonIcon from '@mui/icons-material/RuleOutlined';
 import FloorIcon from '@mui/icons-material/ViewInArOutlined';
+import SoulIcon from '@mui/icons-material/FaceRetouchingNaturalOutlined';
 import { Logo } from './ui.jsx';
 import { useGet } from './api.js';
 import { C } from './theme.js';
 
 const WIDTH = 248;
 const NAV = [
-  ['OVERVIEW', [['/', 'Dashboard', DashboardIcon], ['/monitoring', 'Machine monitoring', MonitorIcon], ['/floor', '3D Floor', FloorIcon]]],
+  ['OVERVIEW', [['/', 'Dashboard', DashboardIcon], ['/monitoring', 'Machine monitoring', MonitorIcon], ['/floor', '3D Floor', FloorIcon], ['/soul', 'Machine Soul (kiosk)', SoulIcon]]],
   ['MASTER DATA', [['/machines', 'Machines', PrecisionIcon], ['/oee-calculation', 'OEE calculation', TuneIcon], ['/downtime-reasons', 'Downtime reasons', ReasonIcon], ['/operators', 'Operators', BadgeIcon], ['/skills', 'Skill matrix', GridIcon], ['/users', 'Users & roles', ShieldIcon]]],
 ];
 

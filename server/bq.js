@@ -63,3 +63,26 @@ export async function query(sql, params = {}) {
   const [rows] = await bq.query({ query: sql.replaceAll('`T`', `\`${GCP_PROJECT}.${DATASET}.${TABLE}\``), params, location: LOCATION });
   return rows;
 }
+
+// Hour-by-hour sensor trend for one press (what Gemini reads as history). null when BigQuery is off.
+export function hourlyTrend(machineId, hours = 24) {
+  return query(
+    `WITH base AS (
+       SELECT * FROM \`T\` WHERE machine_id = @id AND minute >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @h HOUR)),
+     nodes AS (
+       SELECT TIMESTAMP_TRUNC(minute, HOUR) AS hour, o + 1 AS node, ROUND(AVG(v), 1) AS avg_t, ROUND(MAX(v), 1) AS max_t
+       FROM base, UNNEST(tonnage_avg) AS v WITH OFFSET o GROUP BY hour, node)
+     SELECT h.hour, h.parts, h.nc, h.run_min, h.idle_min, h.off_min, h.vib_motor, h.vib_gearbox, h.temp_motor, h.temp_gearbox,
+       h.temp_lube, h.acoustic_max, h.io_faults, h.alarms,
+       ARRAY(SELECT AS STRUCT node, avg_t, max_t FROM nodes WHERE nodes.hour = h.hour ORDER BY node) AS tonnage
+     FROM (
+       SELECT TIMESTAMP_TRUNC(minute, HOUR) AS hour, SUM(parts) AS parts, SUM(nc) AS nc,
+         ROUND(SUM(run_sec) / 60, 1) AS run_min, ROUND(SUM(idle_sec) / 60, 1) AS idle_min, ROUND(SUM(off_sec) / 60, 1) AS off_min,
+         ROUND(AVG(vib_motor), 2) AS vib_motor, ROUND(AVG(vib_gearbox), 2) AS vib_gearbox, ROUND(MAX(temp_motor), 1) AS temp_motor,
+         ROUND(MAX(temp_gearbox), 1) AS temp_gearbox, ROUND(MAX(temp_lube), 1) AS temp_lube, ROUND(MAX(acoustic_max), 2) AS acoustic_max,
+         MAX(io_faults) AS io_faults, ARRAY_CONCAT_AGG(alarm_codes) AS alarms
+       FROM base GROUP BY hour) AS h
+     ORDER BY h.hour`,
+    { id: machineId, h: hours },
+  ).then((rows) => rows?.map((r) => ({ ...r, hour: r.hour.value, alarms: [...new Set(r.alarms)] })) ?? null);
+}

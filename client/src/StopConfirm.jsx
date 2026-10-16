@@ -12,14 +12,14 @@ import { CategoryLabel, Mono, RepeatChip, TypeChip, duration } from './ui.jsx';
 import { C, CATEGORIES } from './theme.js';
 
 // Languages operators may speak (browser speech recognition needs the language up front).
-const LANGS = [
+export const LANGS = [
   ['id-ID', 'Bahasa Indonesia'], ['ms-MY', 'Bahasa Melayu'], ['vi-VN', 'Tiếng Việt'], ['th-TH', 'ไทย'], ['fil-PH', 'Filipino'],
   ['ja-JP', '日本語'], ['ko-KR', '한국어'], ['zh-CN', '中文'], ['hi-IN', 'हिन्दी'], ['ta-IN', 'தமிழ்'], ['en-US', 'English'],
 ];
 const SpeechRecognition = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
 
 // Operator speaks; the browser turns speech into text in the chosen language.
-function useDictation(lang, onText) {
+export function useDictation(lang, onText) {
   const [listening, setListening] = useState(false);
   const [error, setError] = useState('');
   const rec = useRef(null);
@@ -63,11 +63,12 @@ function reasonItems(reasons, event) {
   });
 }
 
-function StopForm({ machineId, event, reasons, onSaved }) {
+// operatorId (optional): who answers; they earn the points (Machine Soul / 3D Floor).
+export function StopForm({ machineId, event, reasons, onSaved, operatorId, lang: kioskLang }) {
   const [code, setCode] = useState(event.reasonCode ?? event.suggested ?? '');
   const [comment, setComment] = useState(event.comment ?? '');
   const [note, setNote] = useState('');
-  const [lang, setLang] = useState(LANGS.find(([l]) => l.slice(0, 2) === navigator.language?.slice(0, 2))?.[0] ?? 'id-ID');
+  const [lang, setLang] = useState(LANGS.find(([l]) => l.slice(0, 2) === (kioskLang ?? navigator.language)?.slice(0, 2))?.[0] ?? 'id-ID');
   const [ai, setAi] = useState({ loading: false, result: null, error: '' });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -88,7 +89,7 @@ function StopForm({ machineId, event, reasons, onSaved }) {
   const save = async () => {
     setSaving(true);
     try {
-      await api(`/machines/${machineId}/downtime/${event.id}`, { method: 'PUT', body: { reasonCode: code, comment } });
+      await api(`/machines/${machineId}/downtime/${event.id}`, { method: 'PUT', body: { reasonCode: code, comment, ...(operatorId && { operatorId }) } });
       onSaved();
     } catch (e) {
       setError(e.message);
