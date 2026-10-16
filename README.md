@@ -10,7 +10,7 @@ and uses Google AI to explain and classify downtime.
 - `client/` — React 19 + Vite + Material UI v7 (+ react-three-fiber for the 3D Floor, MUI X Charts)
 - `server/` — Node 22 + Express 5: master-data API, 1 s tag poller, OEE engine, Gemini / Gemma calls; serves the React build
 - Firestore — master data, hourly OEE buckets, downtime events, points
-- Google AI — **Gemma** (`gemma-4-26b-a4b-it`) suggests a stop's reason from the operator's note in any language;
+- Google AI on Vertex AI — **Gemma 4** (`gemma-4-26b-a4b-it-maas`) suggests a stop's reason from the operator's note in any language;
   **Gemini** (`gemini-3.8-flash`) analyses downtime and answers questions in a chat
 - One container on Cloud Run
 
@@ -85,9 +85,10 @@ Studio key in Secret Manager as `gemini-api-key`, give the Cloud Run service acc
 gcloud run deploy dr-macx --source . --region asia-southeast2 --allow-unauthenticated --min-instances 1 --max-instances 1 --no-cpu-throttling --set-env-vars GOOGLE_CLOUD_PROJECT=YOUR_PROJECT,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_LOCATION=global --set-secrets GEMINI_API_KEY=gemini-api-key:latest
 ```
 
-- **Gemini** runs through **Vertex AI** with the service account, billed to the Cloud billing account
-  (`gemini-3.8-flash` is served in the `global` location).
-- **Gemma** is served only through the Gemini API, so it uses the AI Studio key and needs AI Studio prepay credit.
+- With `GOOGLE_GENAI_USE_VERTEXAI=true` both models run through **Vertex AI** with the service account, billed to the
+  Cloud billing account: **Gemini** `gemini-3.8-flash` and **Gemma 4** as the managed model `gemma-4-26b-a4b-it-maas`.
+  Both are served only on the `global` location. A busy (429) answer is retried twice.
+- Without it (local `.env`), both use the AI Studio key (`gemma-4-26b-a4b-it`), which needs AI Studio prepay credit.
 - The sidebar's **AI models** panel shows each model, how it is reached and whether its last call worked.
 
 The poller and shift accumulators live in memory, so the service runs as a single always-on instance. Set the plant time zone

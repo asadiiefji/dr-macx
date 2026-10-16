@@ -153,3 +153,13 @@ test('Google AI errors are explained: depleted credits (402) before rate limit (
   assert.match(explain(err(429, 'RESOURCE_EXHAUSTED')), /rate limit/);
   assert.equal(explain(err(500, 'boom')), null);
 });
+
+test('AI calls retry a busy (429) answer twice, then give up', async () => {
+  const { track } = await import('./ai.js');
+  const busy = Object.assign(new Error('Resource exhausted'), { status: 429 });
+  const waits = [];
+  let n = 0;
+  assert.equal(await track('gemma', async () => (++n < 3 ? Promise.reject(busy) : 'ok'), async (ms) => waits.push(ms)), 'ok');
+  assert.deepEqual(waits, [1000, 3000]);
+  await assert.rejects(track('gemma', async () => Promise.reject(busy), async () => {}), { status: 429 });
+});

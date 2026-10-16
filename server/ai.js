@@ -2,8 +2,14 @@
 // Gemini analyses a machine's downtime and answers questions about it in a chat.
 import { GoogleGenAI } from '@google/genai';
 
+// GOOGLE_GENAI_USE_VERTEXAI=true: both models run on Vertex AI with the service account, billed to the Cloud account.
+// Otherwise both use the AI Studio key (Gemini API). Both models are served on Vertex's global endpoint only.
+const VERTEX = process.env.GOOGLE_GENAI_USE_VERTEXAI === 'true';
+export const VERTEX_LOCATION = process.env.GOOGLE_CLOUD_LOCATION || 'global';
 export const MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-export const GEMMA_MODEL = process.env.GEMMA_MODEL || 'gemma-4-26b-a4b-it';
+// Gemma 4 on Vertex is a managed (MaaS) model with its own ID.
+export const GEMMA_MODEL = process.env.GEMMA_MODEL || (VERTEX ? 'gemma-4-26b-a4b-it-maas' : 'gemma-4-26b-a4b-it');
+const VIA = VERTEX ? `Vertex AI (${VERTEX_LOCATION})` : 'Gemini API';
 
 function notConfigured(message) {
   const e = new Error(message);
@@ -25,43 +31,43 @@ export function explain(e) {
 
 // Last outcome per model, for the sidebar status. ponytail: per instance, resets on restart.
 const health = { gemini: {}, gemma: {} };
-async function track(name, call) {
-  try {
-    const out = await call();
-    health[name] = { state: 'ok', at: Date.now() };
-    return out;
-  } catch (e) {
-    health[name] = { state: e.status === 503 ? 'off' : 'error', at: Date.now(), message: explain(e) ?? 'The last call failed.' };
-    throw e;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Vertex's shared capacity can answer 429 for a moment: retry twice (after 1 s, then 3 s) before failing.
+export async function track(name, call, wait = sleep) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const out = await call();
+      health[name] = { state: 'ok', at: Date.now() };
+      return out;
+    } catch (e) {
+      if (e.status === 429 && attempt < 2) {
+        await wait(1000 * 3 ** attempt);
+        continue;
+      }
+      health[name] = { state: e.status === 503 ? 'off' : 'error', at: Date.now(), message: explain(e) ?? 'The last call failed.' };
+      throw e;
+    }
   }
 }
 
 export function aiStatus() {
-  const key = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+  const configured = VERTEX || !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
   return {
-    gemini: { name: 'Gemini', model: MODEL, via: VERTEX ? `Vertex AI (${VERTEX_LOCATION})` : 'Gemini API', configured: VERTEX || key, ...health.gemini },
-    gemma: { name: 'Gemma', model: GEMMA_MODEL, via: 'Gemini API', configured: key, ...health.gemma },
+    gemini: { name: 'Gemini', model: MODEL, via: VIA, configured, ...health.gemini },
+    gemma: { name: 'Gemma', model: GEMMA_MODEL, via: VIA, configured, ...health.gemma },
   };
 }
 
-// Gemini: Vertex AI when GOOGLE_GENAI_USE_VERTEXAI=true (Cloud Run service account, billed to the Cloud account),
-// else the AI Studio key. Project and location are passed explicitly: otherwise the SDK would use the API key that
-// is also set (for Gemma) in Vertex "express mode", billed to the AI Studio prepay credit instead.
-const VERTEX = process.env.GOOGLE_GENAI_USE_VERTEXAI === 'true';
-export const VERTEX_LOCATION = process.env.GOOGLE_CLOUD_LOCATION || 'global'; // gemini-3.8-flash is served on global only
-function gemini() {
+// Project and location are passed explicitly: otherwise, with GEMINI_API_KEY also set, the SDK would call Vertex in
+// "express mode" with that key, billed to the AI Studio prepay credit instead of the Cloud account.
+function client(name) {
   if (VERTEX) return new GoogleGenAI({ vertexai: true, project: process.env.GOOGLE_CLOUD_PROJECT, location: VERTEX_LOCATION });
   if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY)
-    throw notConfigured('Gemini is not configured. Set GEMINI_API_KEY in .env, or GOOGLE_GENAI_USE_VERTEXAI=true on Cloud Run.');
+    throw notConfigured(`${name} is not configured. Set GEMINI_API_KEY in .env, or GOOGLE_GENAI_USE_VERTEXAI=true on Cloud Run.`);
   return new GoogleGenAI({ vertexai: false });
 }
-
-// Gemma is served by the Gemini API (AI Studio key), so it always uses the key.
-function gemma() {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-  if (!apiKey) throw notConfigured('Gemma needs GEMINI_API_KEY (Google AI Studio key) in .env or as a Cloud Run secret.');
-  return new GoogleGenAI({ apiKey, vertexai: false });
-}
+const gemini = () => client('Gemini');
+const gemma = () => client('Gemma');
 
 // First {...} block in a model reply (Gemma may wrap JSON in prose or a code fence).
 export function parseJson(text) {
