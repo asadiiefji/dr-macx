@@ -5,7 +5,7 @@ import { schemas, parseSettings, parseConfirm, DEFAULT_TARGETS, BREAK_CATEGORY }
 import { startLive } from './live.js';
 import { currentShift, groupBuckets, oee, add, ZERO, touchesBreak, excludePlanned, buildTimeline } from './oee.js';
 import { withReasons, markRepeats, downtimeStats, REPEAT, pointsFor } from './analysis.js';
-import { analyze, suggestReason, chat, MODEL, GEMMA_MODEL } from './ai.js';
+import { analyze, suggestReason, chat, explain, aiStatus, MODEL, GEMMA_MODEL } from './ai.js';
 
 const db = new Firestore({ ignoreUndefinedProperties: true });
 const live = startLive(db);
@@ -15,6 +15,9 @@ app.use(express.json({ limit: '100kb' }));
 const list = async (col) => (await db.collection(col).get()).docs.map((d) => ({ id: d.id, ...d.data() }));
 
 app.get('/api/live', (req, res) => res.json(live.snapshot()));
+
+// Which Google AI models are active, how they are reached, and how their last call went (sidebar).
+app.get('/api/ai', (req, res) => res.json(aiStatus()));
 
 // --- OEE calculation settings: targets + planned breaks ---
 app.get('/api/settings', (req, res) => res.json(live.settings()));
@@ -225,7 +228,7 @@ app.post('/api/machines/:id/downtime/:eventId/suggest', async (req, res) => {
     res.json({ ...out, reasonCode: valid ? out.reasonCode : null, model: GEMMA_MODEL });
   } catch (e) {
     console.error('gemma suggestion failed:', e.message);
-    res.status(e.status === 503 ? 503 : 502).json({ error: e.status === 503 ? e.message : 'Gemma could not suggest a reason. Pick one yourself or try again.' });
+    res.status(e.status === 503 ? 503 : 502).json({ error: explain(e) ?? 'Gemma could not suggest a reason. Pick one yourself or try again.' });
   }
 });
 
@@ -261,7 +264,7 @@ async function machineContext(r) {
 
 const aiError = (res, what) => (e) => {
   console.error(`${what} failed:`, e.message);
-  res.status(e.status === 503 ? 503 : 502).json({ error: e.status === 503 ? e.message : `Gemini could not ${what}. Try again.` });
+  res.status(e.status === 503 ? 503 : 502).json({ error: explain(e) ?? `Gemini could not ${what}. Try again.` });
 };
 
 app.post('/api/machines/:id/analysis', async (req, res) => {

@@ -145,3 +145,11 @@ test('break reason tolerance, schedule plan and shift timeline', async () => {
   );
   assert.deepEqual(segs.map((s) => [s.kind, (s.end - s.start) / 60e3]), [['unplanned', 45], ['run', 75], ['break', 15], ['run', 15], ['planned', 30]]);
 });
+
+test('Google AI errors are explained: depleted credits (402) before rate limit (429)', async () => {
+  const { explain } = await import('./ai.js');
+  const err = (status, message) => Object.assign(new Error(message), { status });
+  assert.match(explain(err(402, 'Your prepayment credits are depleted. RESOURCE_EXHAUSTED')), /credits .* used up/);
+  assert.match(explain(err(429, 'RESOURCE_EXHAUSTED')), /rate limit/);
+  assert.equal(explain(err(500, 'boom')), null);
+});

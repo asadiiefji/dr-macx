@@ -11,11 +11,49 @@ function notConfigured(message) {
   return e;
 }
 
-// Gemini: Vertex AI when GOOGLE_GENAI_USE_VERTEXAI=true (Cloud Run service account), else the API key.
+// A Google AI error in words the plant team can act on (null = unknown, show a generic retry message).
+// Google returns 402 for depleted AI Studio prepay credits; its text also says RESOURCE_EXHAUSTED, so check it first.
+export function explain(e) {
+  if (e.status === 503) return e.message; // not configured
+  const m = String(e.message ?? '');
+  if (e.status === 402 || /prepayment credits|billing/i.test(m)) return 'Google AI credits for this project are used up. Top up at https://ai.studio/projects, then try again.';
+  if (e.status === 429 || /RESOURCE_EXHAUSTED|quota|rate limit/i.test(m)) return 'Google AI rate limit reached. Wait a minute and try again.';
+  if (e.status === 401 || e.status === 403 || /API key/i.test(m)) return 'The Google AI key was rejected. Check GEMINI_API_KEY.';
+  if (e.status === 404) return 'This AI model is not available. Check GEMINI_MODEL / GEMMA_MODEL.';
+  return null;
+}
+
+// Last outcome per model, for the sidebar status. ponytail: per instance, resets on restart.
+const health = { gemini: {}, gemma: {} };
+async function track(name, call) {
+  try {
+    const out = await call();
+    health[name] = { state: 'ok', at: Date.now() };
+    return out;
+  } catch (e) {
+    health[name] = { state: e.status === 503 ? 'off' : 'error', at: Date.now(), message: explain(e) ?? 'The last call failed.' };
+    throw e;
+  }
+}
+
+export function aiStatus() {
+  const key = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+  return {
+    gemini: { name: 'Gemini', model: MODEL, via: VERTEX ? `Vertex AI (${VERTEX_LOCATION})` : 'Gemini API', configured: VERTEX || key, ...health.gemini },
+    gemma: { name: 'Gemma', model: GEMMA_MODEL, via: 'Gemini API', configured: key, ...health.gemma },
+  };
+}
+
+// Gemini: Vertex AI when GOOGLE_GENAI_USE_VERTEXAI=true (Cloud Run service account, billed to the Cloud account),
+// else the AI Studio key. Project and location are passed explicitly: otherwise the SDK would use the API key that
+// is also set (for Gemma) in Vertex "express mode", billed to the AI Studio prepay credit instead.
+const VERTEX = process.env.GOOGLE_GENAI_USE_VERTEXAI === 'true';
+export const VERTEX_LOCATION = process.env.GOOGLE_CLOUD_LOCATION || 'global'; // gemini-3.8-flash is served on global only
 function gemini() {
-  if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY && process.env.GOOGLE_GENAI_USE_VERTEXAI !== 'true')
+  if (VERTEX) return new GoogleGenAI({ vertexai: true, project: process.env.GOOGLE_CLOUD_PROJECT, location: VERTEX_LOCATION });
+  if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY)
     throw notConfigured('Gemini is not configured. Set GEMINI_API_KEY in .env, or GOOGLE_GENAI_USE_VERTEXAI=true on Cloud Run.');
-  return new GoogleGenAI({});
+  return new GoogleGenAI({ vertexai: false });
 }
 
 // Gemma is served by the Gemini API (AI Studio key), so it always uses the key.
@@ -93,11 +131,11 @@ const SCHEMA = {
 };
 
 export async function analyze(input) {
-  const res = await gemini().models.generateContent({
+  const res = await track('gemini', () => gemini().models.generateContent({
     model: MODEL,
     contents: JSON.stringify(input),
     config: { systemInstruction: SYSTEM, responseMimeType: 'application/json', responseJsonSchema: SCHEMA, temperature: 0.3 },
-  });
+  }));
   return { model: MODEL, ...JSON.parse(res.text) };
 }
 
@@ -113,11 +151,11 @@ Reply with JSON only, no prose, in this shape:
  "machineCondition": "one sentence on the machine's current state from the data"}`;
 
 export async function suggestReason(input) {
-  const res = await gemma().models.generateContent({
+  const res = await track('gemma', () => gemma().models.generateContent({
     model: GEMMA_MODEL,
     contents: JSON.stringify(input),
     config: { systemInstruction: SUGGEST, temperature: 0.2 },
-  });
+  }));
   const out = parseJson(res.text);
   if (!out) throw Object.assign(new Error('Gemma did not return a usable answer.'), { status: 502 });
   return out;
@@ -134,7 +172,7 @@ If the data cannot answer, say what is missing. Planned stops do not count again
 Call rejected pieces NC (non-conformance), never NG. Answer in the user's language, short (at most about 150 words), plain text: short paragraphs and "- " bullets, no headings, no bold.`;
 
 export async function chat(context, messages) {
-  const res = await gemini().models.generateContent({
+  const res = await track('gemini', () => gemini().models.generateContent({
     model: MODEL,
     contents: [
       { role: 'user', parts: [{ text: `Machine data for this conversation (JSON):\n${JSON.stringify(context)}` }] },
@@ -142,6 +180,6 @@ export async function chat(context, messages) {
       ...messages.map((m) => ({ role: m.role, parts: [{ text: m.text }] })),
     ],
     config: { systemInstruction: CHAT, temperature: 0.4 },
-  });
+  }));
   return res.text;
 }

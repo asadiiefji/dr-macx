@@ -77,12 +77,18 @@ The waiting-for-reason counter turns red when a stop has waited more than 15 min
 
 ## Deploy to Cloud Run
 
-Create a GCP project, enable Cloud Run, Cloud Build and Firestore (Native mode), store the AI Studio key in Secret Manager as `gemini-api-key`, then:
+Create a GCP project, enable Cloud Run, Cloud Build, Firestore (Native mode), Secret Manager and Vertex AI, store the AI
+Studio key in Secret Manager as `gemini-api-key`, give the Cloud Run service account `roles/datastore.user`,
+`roles/secretmanager.secretAccessor` and `roles/aiplatform.user`, then:
 
 ```bash
-gcloud run deploy dr-macx --source . --region asia-southeast2 --allow-unauthenticated --min-instances 1 --max-instances 1 --no-cpu-throttling --set-env-vars GOOGLE_CLOUD_PROJECT=YOUR_PROJECT --set-secrets GEMINI_API_KEY=gemini-api-key:latest
+gcloud run deploy dr-macx --source . --region asia-southeast2 --allow-unauthenticated --min-instances 1 --max-instances 1 --no-cpu-throttling --set-env-vars GOOGLE_CLOUD_PROJECT=YOUR_PROJECT,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_LOCATION=global --set-secrets GEMINI_API_KEY=gemini-api-key:latest
 ```
 
-Gemma is served through the Gemini API, so the service needs the AI Studio key (stored in Secret Manager, never in the image).
+- **Gemini** runs through **Vertex AI** with the service account, billed to the Cloud billing account
+  (`gemini-3.8-flash` is served in the `global` location).
+- **Gemma** is served only through the Gemini API, so it uses the AI Studio key and needs AI Studio prepay credit.
+- The sidebar's **AI models** panel shows each model, how it is reached and whether its last call worked.
+
 The poller and shift accumulators live in memory, so the service runs as a single always-on instance. Set the plant time zone
 with the `TZ` env var (default `Asia/Jakarta` in the Dockerfile).

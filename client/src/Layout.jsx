@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router';
-import { AppBar, Box, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText, ListSubheader, Toolbar } from '@mui/material';
+import { AppBar, Box, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText, ListSubheader, Stack, Toolbar, Tooltip, Typography } from '@mui/material';
+import AiIcon from '@mui/icons-material/AutoAwesomeOutlined';
 import MenuIcon from '@mui/icons-material/MenuOutlined';
 import DashboardIcon from '@mui/icons-material/SpaceDashboardOutlined';
 import MonitorIcon from '@mui/icons-material/MonitorHeartOutlined';
@@ -12,6 +13,7 @@ import TuneIcon from '@mui/icons-material/TuneOutlined';
 import ReasonIcon from '@mui/icons-material/RuleOutlined';
 import FloorIcon from '@mui/icons-material/ViewInArOutlined';
 import { Logo } from './ui.jsx';
+import { useGet } from './api.js';
 import { C } from './theme.js';
 
 const WIDTH = 248;
@@ -41,6 +43,7 @@ export default function Layout() {
           ))}
         </List>
       ))}
+      <AiModels />
     </Box>
   );
 
@@ -66,5 +69,44 @@ export default function Layout() {
         <Outlet />
       </Box>
     </Box>
+  );
+}
+
+// The Google AI models this server uses, how they are reached, and how their last call went.
+const AI_STATE = {
+  ok: { label: 'Working', color: '#2E7D32' },
+  error: { label: 'Error', color: '#C62828' },
+  off: { label: 'No key', color: '#8A5300' },
+  idle: { label: 'Ready', color: '#475569' },
+};
+function AiModels() {
+  const { data, reload } = useGet('/ai');
+  useEffect(() => {
+    const t = setInterval(reload, 30000);
+    return () => clearInterval(t);
+  }, [reload]);
+  if (!data) return null;
+  return (
+    <List subheader={<ListSubheader sx={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '0.08em', lineHeight: '32px', color: 'text.secondary' }}>AI MODELS</ListSubheader>}>
+      {Object.values(data).map((m) => {
+        const st = AI_STATE[!m.configured ? 'off' : m.state ?? 'idle'] ?? AI_STATE.idle;
+        const tip = m.message || (m.state === 'ok' ? `Last call worked at ${new Date(m.at).toLocaleTimeString()}` : m.configured ? 'Not used yet since the server started' : 'Set GEMINI_API_KEY');
+        return (
+          <Tooltip key={m.name} title={tip} placement="right">
+            <Box tabIndex={0} sx={{ px: 1.5, py: 1, mb: 0.5, borderRadius: 3, bgcolor: '#F8FAFC', border: `1px solid ${C.line}` }}>
+              <Stack direction="row" alignItems="center" gap={1}>
+                <AiIcon sx={{ fontSize: 18, color: C.blue }} />
+                <Typography fontWeight={700} fontSize={14} flex={1}>{m.name}</Typography>
+                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: st.color }} />
+                <Typography fontSize={12} fontWeight={700} sx={{ color: st.color }}>{st.label}</Typography>
+              </Stack>
+              <Typography fontSize={12} color="text.secondary" sx={{ wordBreak: 'break-all' }}>{m.model}</Typography>
+              <Typography fontSize={11} color="text.secondary">via {m.via}</Typography>
+              {m.state === 'error' && <Typography fontSize={11} sx={{ color: st.color, mt: 0.5 }}>{m.message}</Typography>}
+            </Box>
+          </Tooltip>
+        );
+      })}
+    </List>
   );
 }
