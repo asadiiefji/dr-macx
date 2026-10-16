@@ -5,7 +5,7 @@ import { schemas, parseSettings, parseConfirm, DEFAULT_TARGETS, BREAK_CATEGORY }
 import { startLive } from './live.js';
 import { currentShift, groupBuckets, oee, add, ZERO, touchesBreak, excludePlanned, buildTimeline } from './oee.js';
 import { withReasons, markRepeats, downtimeStats, REPEAT, pointsFor } from './analysis.js';
-import { analyze, suggestReason, chat, explain, aiStatus, MODEL, GEMMA_MODEL } from './ai.js';
+import { analyze, suggestReason, chat, explain, aiStatus, MODEL } from './ai.js';
 import { SENSORS, SETUPS, FRAMES, CURRENT } from './sensors.js';
 import { soulRoutes } from './soul.js';
 import { startBrain } from './brain.js';
@@ -202,7 +202,7 @@ app.get('/api/points', async (req, res) => {
   res.json({ shiftStart, rows });
 });
 
-// Gemma suggests a reason for one stop from its data and the operator's note (any language). Nothing is saved.
+// Gemini suggests a reason for one stop from its data and the operator's note (any language). Nothing is saved.
 app.post('/api/machines/:id/downtime/:eventId/suggest', async (req, res) => {
   const machineRef = db.doc(`machines/${req.params.id}`);
   const [machine, event] = await Promise.all([machineRef.get(), machineRef.collection('downtime').doc(req.params.eventId).get()]);
@@ -240,10 +240,10 @@ app.post('/api/machines/:id/downtime/:eventId/suggest', async (req, res) => {
       reasons: allowed.map((x) => ({ code: x.code, name: x.name, category: x.category, type: x.type })),
     });
     const valid = allowed.some((x) => x.code === out.reasonCode);
-    res.json({ ...out, reasonCode: valid ? out.reasonCode : null, model: GEMMA_MODEL });
+    res.json({ ...out, reasonCode: valid ? out.reasonCode : null, model: MODEL });
   } catch (e) {
-    console.error('gemma suggestion failed:', e.message);
-    res.status(e.status === 503 ? 503 : 502).json({ error: explain(e) ?? 'Gemma could not suggest a reason. Pick one yourself or try again.' });
+    console.error('reason suggestion failed:', e.message);
+    res.status(e.status === 503 ? 503 : 502).json({ error: explain(e) ?? 'Gemini could not suggest a reason. Pick one yourself or try again.' });
   }
 });
 

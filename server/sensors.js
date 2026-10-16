@@ -69,6 +69,7 @@ export const nodeNominal = (m) => m.ratedTonnage / m.nodes;
 export function judge(m, sensor, value) {
   if (value == null) return 'none';
   if (sensor.node) {
+    if (!value) return 'none'; // no stroke yet, nothing to judge
     const dev = Math.abs(value - nodeNominal(m)) / nodeNominal(m);
     return dev > (m.nodeTolerancePct / 100) * 1.5 ? 'alarm' : dev > m.nodeTolerancePct / 100 ? 'warn' : 'ok';
   }

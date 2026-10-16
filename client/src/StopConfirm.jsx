@@ -107,7 +107,7 @@ export function StopForm({ machineId, event, reasons, onSaved, operatorId, lang:
         <RepeatChip event={event} />
       </Stack>
 
-      {/* Operator note by voice or text, any language: Gemma translates it and suggests the reason. */}
+      {/* Operator note by voice or text, any language: Gemini translates it and suggests the reason. */}
       <Box sx={{ p: 1.5, borderRadius: 3, bgcolor: '#F8FAFC', border: `1px solid ${C.line}` }}>
         <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems={{ sm: 'flex-start' }}>
           <TextField
@@ -137,7 +137,7 @@ export function StopForm({ machineId, event, reasons, onSaved, operatorId, lang:
             </>
           )}
           <Button variant="outlined" startIcon={ai.loading ? <CircularProgress size={16} /> : <AiIcon />} onClick={suggest} disabled={ai.loading} sx={{ flex: 'none' }}>
-            Suggest with Gemma
+            Suggest with Gemini
           </Button>
         </Stack>
         {dictation.listening && <Typography variant="caption" color="error.main" mt={0.5} component="div">Recording… speak, then press stop.</Typography>}
@@ -149,7 +149,7 @@ export function StopForm({ machineId, event, reasons, onSaved, operatorId, lang:
               <Typography variant="body2"><b>Translation{r.language ? ` (${r.language})` : ''}:</b> {r.translation}</Typography>
             )}
             <Typography variant="body2">
-              <b>Gemma suggests:</b> {r.reasonCode ? `${r.reasonCode} · ${reasons.find((x) => x.code === r.reasonCode)?.name ?? ''}` : 'no fitting reason; pick one'}
+              <b>Gemini suggests:</b> {r.reasonCode ? `${r.reasonCode} · ${reasons.find((x) => x.code === r.reasonCode)?.name ?? ''}` : 'no fitting reason; pick one'}
               {r.confidence != null && ` (${Math.round(Number(r.confidence) * 100)}% sure)`}
             </Typography>
             {r.rationale && <Typography variant="body2" color="text.secondary">Why: {r.rationale}</Typography>}

@@ -4,7 +4,7 @@ OEE monitoring for **stamping presses**, built for the Google Cloud AI Builder C
 Industrial Efficiency). Each press carries a sensor set (Essential or Premium) wired to its PLC; Dr. Macx reads the sensors through
 Kepware (or a built-in press simulator), turns them into Availability, Performance, Quality and OEE per shift, records every stop,
 and gives each press a voice: the **Machine Soul**, a kiosk where a 3D press character tells operators what is going on, asks
-when output surprises it, shows faults on the press anatomy and hands over between shifts, using Gemini and Gemma.
+when output surprises it, shows faults on the press anatomy and hands over between shifts, using Gemini.
 
 ## Sensors
 
@@ -25,12 +25,12 @@ judged against rated tonnage ÷ nodes ± tolerance (default 5 %, alarm at 1.5×)
 
 - `client/` — React 19 + Vite + Material UI v7 (+ react-three-fiber for the 3D Floor, MUI X Charts)
 - `server/` — Node 22 + Express 5: master-data API, 1 s sensor poller + press simulator, OEE engine, Machine Soul brain,
-  Gemini / Gemma calls; serves the React build
+  Gemini calls; serves the React build
 - Firestore — master data, hourly OEE buckets, downtime events, points, Soul messages, shift handovers
 - BigQuery (optional, `BQ_DATASET`) — per-minute sensor summaries (`sensor_minutes`), read by Gemini and the cycle-time learner
 - Cloud Text-to-Speech — the press's voice (falls back to the browser's voice)
-- Google AI on Vertex AI — **Gemma 4** (`gemma-4-26b-a4b-it-maas`) suggests a stop's reason from the operator's note in any language;
-  **Gemini** (`gemini-3.8-flash`) analyses downtime and answers questions in a chat
+- Google AI on Vertex AI — **Gemini** (`gemini-3.8-flash`) for everything: stop-reason suggestions from the operator's note in
+  any language, downtime analysis, chat, the Machine Soul's words, translation and shift handovers
 - One container on Cloud Run
 
 ## Pages
@@ -77,7 +77,7 @@ npm test
   Availability = run time ÷ planned time · Performance = ideal CT × total ÷ run time · Quality = good ÷ total · OEE = A × P × Q.
 - Rejected pieces are called **NC** (non-conformance).
 - Every stop outside a break is recorded (`machines/{id}/downtime`) and waits for a confirmed reason; the PLC alarm pre-fills a
-  suggestion and Gemma can suggest one from the operator's spoken or typed note (translated to English).
+  suggestion and Gemini can suggest one from the operator's spoken or typed note (translated to English).
 - An **Operator break** reason fits only a stop during a break or within the break tolerance before / after it (default ±5 min).
 - A **repeated case** is the same reason 3+ times on one machine within 24 h.
 - Schedule target (3D Floor): pieces due by now = (time since shift start − breaks − planned stops) ÷ ideal cycle time.
@@ -105,7 +105,7 @@ The press speaks only on events (stored in `machines/{id}/soul`, translated into
 | `GET /api/machines/:id/downtime?from&to&shift` | Stops in a range with reasons, repeats and stats |
 | `GET /api/machines/:id/downtime/pending` | Stops still waiting for a reason |
 | `PUT /api/machines/:id/downtime/:eventId` | Confirm / change a reason: `{ reasonCode, comment, operatorId? }` |
-| `POST /api/machines/:id/downtime/:eventId/suggest` | Gemma reason suggestion: `{ note }` (any language) |
+| `POST /api/machines/:id/downtime/:eventId/suggest` | Gemini reason suggestion: `{ note }` (any language) |
 | `GET /api/machines/:id/timeline?start` | Shift timeline segments (run / unplanned / planned / break / no data) |
 | `GET /api/machines/:id/history?from&to&by&shift` | OEE rows, by-shift summary, totals |
 | `POST /api/machines/:id/analysis`, `POST /api/machines/:id/chat` | Gemini analysis and chat |
@@ -134,11 +134,10 @@ the BigQuery dataset `drmacx` (asia-southeast2), give the Cloud Run service acco
 gcloud run deploy dr-macx --source . --region asia-southeast2 --allow-unauthenticated --min-instances 1 --max-instances 1 --no-cpu-throttling --set-env-vars GOOGLE_CLOUD_PROJECT=YOUR_PROJECT,GCP_PROJECT=YOUR_PROJECT,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_LOCATION=global,BQ_DATASET=drmacx
 ```
 
-- With `GOOGLE_GENAI_USE_VERTEXAI=true` both models run through **Vertex AI** with the service account, billed to the
-  Cloud billing account: **Gemini** `gemini-3.8-flash` and **Gemma 4** as the managed model `gemma-4-26b-a4b-it-maas`.
-  Both are served only on the `global` location. A busy (429) answer is retried twice.
-- Without it, both use an AI Studio key (`GEMINI_API_KEY`, `gemma-4-26b-a4b-it`), which needs AI Studio prepay credit.
-- The sidebar's **AI models** panel shows each model, how it is reached and whether its last call worked.
+- With `GOOGLE_GENAI_USE_VERTEXAI=true` Gemini (`gemini-3.8-flash`) runs through **Vertex AI** with the service account,
+  billed to the Cloud billing account, on the `global` location. A busy (429) answer is retried twice.
+- Without it, Gemini uses an AI Studio key (`GEMINI_API_KEY`), which needs AI Studio prepay credit.
+- The sidebar's **AI models** panel shows the model, how it is reached and whether its last call worked.
 
 The poller, shift accumulators and the Soul's throttles live in memory, so the service runs as a single always-on instance. Set the plant time zone
 with the `TZ` env var (default `Asia/Jakarta` in the Dockerfile).

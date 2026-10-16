@@ -1,14 +1,12 @@
-// Google AI models: Gemma suggests a stop's reason (with the operator's spoken note, any language);
-// Gemini analyses a machine's downtime and answers questions about it in a chat.
+// Google AI (Gemini only): suggests a stop's reason from the operator's spoken note (any language), analyses downtime,
+// answers questions in a chat and is the Machine Soul's voice.
 import { GoogleGenAI } from '@google/genai';
 
-// GOOGLE_GENAI_USE_VERTEXAI=true: both models run on Vertex AI with the service account, billed to the Cloud account.
-// Otherwise both use the AI Studio key (Gemini API). Both models are served on Vertex's global endpoint only.
+// GOOGLE_GENAI_USE_VERTEXAI=true: Gemini runs on Vertex AI with the service account, billed to the Cloud account.
+// Otherwise it uses the AI Studio key (Gemini API). The model is served on Vertex's global endpoint.
 const VERTEX = process.env.GOOGLE_GENAI_USE_VERTEXAI === 'true';
 export const VERTEX_LOCATION = process.env.GOOGLE_CLOUD_LOCATION || 'global';
 export const MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-// Gemma 4 on Vertex is a managed (MaaS) model with its own ID.
-export const GEMMA_MODEL = process.env.GEMMA_MODEL || (VERTEX ? 'gemma-4-26b-a4b-it-maas' : 'gemma-4-26b-a4b-it');
 const VIA = VERTEX ? `Vertex AI (${VERTEX_LOCATION})` : 'Gemini API';
 // GCP_PROJECT wins: local dev points GOOGLE_CLOUD_PROJECT at the Firestore emulator's demo project.
 const PROJECT = process.env.GCP_PROJECT || process.env.GOOGLE_CLOUD_PROJECT;
@@ -33,12 +31,12 @@ export function explain(e) {
   if (e.status === 402 || /prepayment credits|billing/i.test(m)) return 'Google AI credits for this project are used up. Top up at https://ai.studio/projects, then try again.';
   if (e.status === 429 || /RESOURCE_EXHAUSTED|quota|rate limit/i.test(m)) return 'Google AI rate limit reached. Wait a minute and try again.';
   if (e.status === 401 || e.status === 403 || /API key/i.test(m)) return 'The Google AI key was rejected. Check GEMINI_API_KEY.';
-  if (e.status === 404) return 'This AI model is not available. Check GEMINI_MODEL / GEMMA_MODEL.';
+  if (e.status === 404) return 'This AI model is not available. Check GEMINI_MODEL.';
   return null;
 }
 
 // Last outcome per model, for the sidebar status. ponytail: per instance, resets on restart.
-const health = { gemini: {}, gemma: {} };
+const health = { gemini: {} };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Vertex's shared capacity can answer 429 for a moment: retry twice (after 1 s, then 3 s) before failing.
 export async function track(name, call, wait = sleep) {
@@ -62,7 +60,6 @@ export function aiStatus() {
   const configured = VERTEX || !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
   return {
     gemini: { name: 'Gemini', model: MODEL, via: VIA, configured, ...health.gemini },
-    gemma: { name: 'Gemma', model: GEMMA_MODEL, via: VIA, configured, ...health.gemma },
   };
 }
 
@@ -75,9 +72,8 @@ function client(name) {
   return new GoogleGenAI({ vertexai: false });
 }
 const gemini = () => client('Gemini');
-const gemma = () => client('Gemma');
 
-// First {...} block in a model reply (Gemma may wrap JSON in prose or a code fence).
+// First {...} block in a model reply (a model may wrap JSON in prose or a code fence).
 export function parseJson(text) {
   const m = /\{[\s\S]*\}/.exec(text ?? '');
   if (!m) return null;
@@ -153,7 +149,7 @@ export async function analyze(input) {
   return { model: MODEL, ...JSON.parse(res.text) };
 }
 
-// --- Gemma: suggest one stop's reason; the operator still confirms it ---
+// --- Gemini: suggest one stop's reason; the operator still confirms it ---
 
 const SUGGEST = `You help a machine operator classify one machine stop.
 The operator note may be in any language (for example Indonesian, Vietnamese, Thai, Tagalog, Malay, Japanese, Korean, Chinese, Hindi). Translate it to English.
@@ -165,13 +161,13 @@ Reply with JSON only, no prose, in this shape:
  "machineCondition": "one sentence on the machine's current state from the data"}`;
 
 export async function suggestReason(input) {
-  const res = await track('gemma', () => gemma().models.generateContent({
-    model: GEMMA_MODEL,
+  const res = await track('gemini', () => gemini().models.generateContent({
+    model: MODEL,
     contents: JSON.stringify(input),
-    config: { systemInstruction: SUGGEST, temperature: 0.2 },
+    config: { systemInstruction: SUGGEST, responseMimeType: 'application/json', temperature: 0.2 },
   }));
   const out = parseJson(res.text);
-  if (!out) throw Object.assign(new Error('Gemma did not return a usable answer.'), { status: 502 });
+  if (!out) throw Object.assign(new Error('Gemini did not return a usable answer.'), { status: 502 });
   return out;
 }
 

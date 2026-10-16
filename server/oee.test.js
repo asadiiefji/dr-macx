@@ -119,7 +119,7 @@ test('repeated case = same reason 3+ times within 24 h', () => {
   assert.equal(markRepeats([{ start: at(1, 0, 10), code: 'A' }, { start: at(1, 0, 12), code: 'A' }, { start: at(2, 0, 12), code: 'A' }])[2].repeatCount, 2);
 });
 
-test('Gemma reply JSON is found inside prose or a code fence', () => {
+test('AI reply JSON is found inside prose or a code fence', () => {
   assert.deepEqual(parseJson('Sure!\n```json\n{"reasonCode":"BD-HYD","confidence":0.8}\n```'), { reasonCode: 'BD-HYD', confidence: 0.8 });
   assert.equal(parseJson('no json here'), null);
 });
@@ -161,9 +161,9 @@ test('AI calls retry a busy (429) answer twice, then give up', async () => {
   const busy = Object.assign(new Error('Resource exhausted'), { status: 429 });
   const waits = [];
   let n = 0;
-  assert.equal(await track('gemma', async () => (++n < 3 ? Promise.reject(busy) : 'ok'), async (ms) => waits.push(ms)), 'ok');
+  assert.equal(await track('gemini', async () => (++n < 3 ? Promise.reject(busy) : 'ok'), async (ms) => waits.push(ms)), 'ok');
   assert.deepEqual(waits, [1000, 3000]);
-  await assert.rejects(track('gemma', async () => Promise.reject(busy), async () => {}), { status: 429 });
+  await assert.rejects(track('gemini', async () => Promise.reject(busy), async () => {}), { status: 429 });
 });
 
 test('sensors: motor states, tonnage nodes, Essential vs Premium, OEE adapter', async () => {
@@ -242,6 +242,8 @@ test('soul: target risk, hourly surprise and sensor anomalies', async () => {
   assert.equal(anomalies(press, mem, 60e3).length, 0); // said already
   assert.equal(anomalies({ ...press, sensorStatus: { ...status, tonnage4: 'alarm' } }, mem, 90e3).length, 1); // escalated
   assert.equal(anomalies({ ...press, sensorStatus: status }, mem, 100e3).length, 0);
+  const { judge } = await import('./sensors.js');
+  assert.equal(judge(m, sensorsFor(m)[3], 0), 'none'); // no stroke yet: a load cell reading 0 is not an alarm
   assert.equal(mem.since.tonnage4, undefined); // back to ok resets the hold
 });
 

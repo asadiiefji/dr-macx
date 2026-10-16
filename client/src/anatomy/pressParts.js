@@ -13,6 +13,12 @@ const cylX = (id, name, center, r, len, tone, extra = {}) => ({ id, name, kind: 
 const cylY = (id, name, center, r, len, tone, extra = {}) => ({ id, name, kind: 'cylY', center, r, len, tone, ...extra });
 const line = (id, name, points, tone, extra = {}) => ({ id, name, kind: 'line', points, tone, ...extra });
 
+// Plain names for the parts sensors point at (server/sensors.js "part").
+export const PART_NAMES = {
+  loadCell: 'Tonnage load cell', motor: 'Main motor', gearbox: 'Gearbox', lubeLine: 'Lube line', camera: 'Vision camera',
+  microphone: 'Acoustic sensor', ioModule: 'I/O module', laserEye: 'Laser eye', plc: 'PLC', exitChute: 'Exit chute', controlPanel: 'Control panel',
+};
+
 // Load-cell (tonnage node) numbering, seen from the operator: 1 left front, 2 right front, 3 right rear, 4 left rear.
 export const NODE_PLACE = { 1: 'left front', 2: 'right front', 3: 'right rear', 4: 'left rear' };
 
