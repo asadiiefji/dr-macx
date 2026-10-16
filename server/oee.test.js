@@ -91,16 +91,34 @@ test('simulation modes move OEE the right way', async () => {
   const { newRecorder, record } = await import('./recorder.js');
   const { pressDefaults, toOeeTags } = await import('./sensors.js');
   const m = pressDefaults({ idealCycleTime: 6, setup: 'premium', frameType: 'straight-side', ratedTonnage: 400 });
-  const run = (mode) => {
+  const run = (mode, levels = null) => {
     let seed = 7;
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    const gen = { ...newDummy(), mode };
+    const gen = { ...newDummy(), mode, levels };
     const rec = newRecorder();
     for (let t = at(8); t < at(14); t += 1000) record(rec, toOeeTags(m, dummyStep(gen, m, 1, { rnd }), 0), t, 1, 6, false);
-    return oee([...rec.hours.values()].reduce((a, b) => ({ ...a, ...Object.fromEntries(Object.keys(ZERO).map((k) => [k, a[k] + b[k]])) }), ZERO)).oee;
+    return oee([...rec.hours.values()].reduce((a, b) => ({ ...a, ...Object.fromEntries(Object.keys(ZERO).map((k) => [k, a[k] + b[k]])) }), ZERO));
   };
-  const [worse, normal, better] = ['worse', 'normal', 'better'].map(run);
+  const [worse, normal, better] = ['worse', 'normal', 'better'].map((x) => run(x).oee);
   assert.ok(worse < normal && normal < better, `${worse} < ${normal} < ${better}`);
+  // one factor at a time: only that factor drops (A = stops, P = stroke speed, Q = NC)
+  const base = run('normal');
+  for (const f of ['availability', 'performance', 'quality']) {
+    const k = run('normal', { availability: 'normal', performance: 'normal', quality: 'normal', [f]: 'worse' });
+    assert.ok(k[f] < base[f] - 0.02, `${f} lower: ${k[f]} < ${base[f]}`);
+  }
+});
+
+test('simulated breakdown stops the press at once with the hydraulic alarm', async () => {
+  const { newDummy, dummyStep, injectFault } = await import('./dummy.js');
+  const { pressDefaults } = await import('./sensors.js');
+  const m = pressDefaults({ idealCycleTime: 6 });
+  const gen = newDummy();
+  injectFault(gen, m, 'breakdown', () => 0.5);
+  const r = dummyStep(gen, m, 1, { rnd: () => 0.99 });
+  assert.equal(r.alarm, 310);
+  assert.equal(r.made, 0);
+  assert.ok(gen.stopLeft > 500);
 });
 
 test('planned stops leave planned time, so they do not lower OEE', () => {

@@ -18,13 +18,17 @@ export const FAULTS = {
   ioFault: 0.05, // a proximity sensor fails: the I/O module flags it, sensor misreads (102) follow
 };
 
-// Simulation modes, switched per machine from the monitoring card. inject = start a fault story now.
+// Simulation levels, switched per machine (all factors at once, or one OEE factor at a time):
+// availability uses stops / longer, performance uses slow, quality uses ng. inject = start a fault story now.
 export const MODES = {
   normal: { stops: 1, longer: 1, slow: [1.05, 1.3], ng: 0.015 },
   better: { stops: 0.25, longer: 0.7, slow: [1.0, 1.04], ng: 0.004 },
   worse: { stops: 5, longer: 1.5, slow: [1.4, 1.8], ng: 0.06 },
 };
-export const INJECT = ['looseNode', 'stick', 'ioFault', 'overheat'];
+export const FACTORS = ['availability', 'performance', 'quality'];
+export const INJECT = ['looseNode', 'stick', 'ioFault', 'overheat', 'breakdown'];
+// The level one OEE factor runs at (st.levels overrides the all-factor st.mode).
+export const levelOf = (st, factor) => (MODES[st.levels?.[factor]] ? st.levels[factor] : MODES[st.mode] ? st.mode : 'normal');
 
 export const newDummy = () => ({
   run: true, total: 0, ng: 0, alarm: 0, reason: null, stopLeft: 0, partial: 0, sinceChange: Infinity, mode: 'normal',
@@ -46,30 +50,34 @@ export function injectFault(st, m, kind, rnd = Math.random) {
   if (kind === 'stick') st.stickLeft = 40 + rnd() * 80;
   if (kind === 'ioFault') st.ioFault = true;
   if (kind === 'overheat') st.heat = 18;
+  // a hydraulic breakdown right now (repair also re-seats a loose node)
+  if (kind === 'breakdown' && st.run) Object.assign(stop(st, 310, 'BD-HYD', 600 + rnd() * 900), { node: null });
 }
 
 // wear 0..1 drives the hydraulic fault rate and vibration; hour 0..23 drives night-shift effects;
 // breakIn = seconds until the next planned break starts (Infinity if none soon).
 // Returns the sensor readings (see sensors.js).
 export function dummyStep(st, m, dt, { rnd = Math.random, wear = 0.8, hour = 12, onBreak = false, breakIn = Infinity } = {}) {
-  const mode = MODES[st.mode] ?? MODES.normal;
+  const A = MODES[levelOf(st, 'availability')];
+  const P = MODES[levelOf(st, 'performance')];
+  const Q = MODES[levelOf(st, 'quality')];
   let made = 0;
   if (!onBreak) {
     if (st.run) {
       // fault stories start while the press runs
       for (const [kind, perHour] of Object.entries(FAULTS)) {
         const active = kind === 'looseNode' ? st.node : kind === 'stick' ? st.stickLeft > 0 : st.ioFault;
-        if (!active && rnd() < (perHour * mode.stops * dt) / 3600) injectFault(st, m, kind, rnd);
+        if (!active && rnd() < (perHour * A.stops * dt) / 3600) injectFault(st, m, kind, rnd);
       }
       const night = hour >= 23 || hour < 7;
       const hit = PROFILES.find((p) => {
         let rate = typeof p.perHour === 'function' ? p.perHour(wear) : p.perHour;
         if (p.code === 101 && st.stickLeft > 0) rate *= 15; // a sticking part ends in a jam
         if (p.code === 102 && st.ioFault) rate *= 6; // a failing proximity sensor misreads
-        return rnd() < (rate * mode.stops * (night ? p.nightFactor ?? 1 : 1) * dt) / 3600;
+        return rnd() < (rate * A.stops * (night ? p.nightFactor ?? 1 : 1) * dt) / 3600;
       });
       if (hit) {
-        stop(st, hit.code, hit.reason, (hit.min + rnd() * (hit.max - hit.min)) * mode.longer);
+        stop(st, hit.code, hit.reason, (hit.min + rnd() * (hit.max - hit.min)) * A.longer);
         if (hit.code === 205) Object.assign(st, { sinceChange: 0, node: null }); // die change re-sets the die and gibs
         if (hit.code === 310) st.node = null; // breakdown repair also fixes the loose node
         if (hit.code === 101) st.stickLeft = 0; // jam cleared, die cleaned
@@ -78,11 +86,11 @@ export function dummyStep(st, m, dt, { rnd = Math.random, wear = 0.8, hour = 12,
         // crew stops early for the break and is sometimes back late (the stop pauses during the break)
         stop(st, 0, 'BRK-OP', breakIn + rnd() * 240);
       } else {
-        const [lo, hi] = mode.slow;
+        const [lo, hi] = P.slow;
         st.partial += dt / (m.idealCycleTime * (lo + rnd() * (hi - lo)));
         st.sinceChange += dt;
         // more NC after a die change, with a loose node (uneven load) or a sticking part
-        const ngRate = (st.sinceChange < 600 ? mode.ng * 4 : mode.ng) + (st.node ? 0.02 : 0) + (st.stickLeft > 0 ? 0.03 : 0);
+        const ngRate = (st.sinceChange < 600 ? Q.ng * 4 : Q.ng) + (st.node ? 0.02 : 0) + (st.stickLeft > 0 ? 0.03 : 0);
         while (st.partial >= 1) {
           st.partial--;
           st.total++;

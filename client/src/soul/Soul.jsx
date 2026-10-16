@@ -6,7 +6,6 @@ import {
   DialogTitle, Grid, IconButton, InputAdornment, LinearProgress, MenuItem, Snackbar, Stack, Tab, Tabs, TextField, Tooltip,
   Typography, useMediaQuery,
 } from '@mui/material';
-import { ThemeProvider, createTheme } from '@mui/material/styles';
 import VolumeUpIcon from '@mui/icons-material/VolumeUpOutlined';
 import VolumeOffIcon from '@mui/icons-material/VolumeOffOutlined';
 import ReplayIcon from '@mui/icons-material/ReplayOutlined';
@@ -17,20 +16,18 @@ import ChatIcon from '@mui/icons-material/ChatRounded';
 import WaveIcon from '@mui/icons-material/GraphicEqRounded';
 import GlobeIcon from '@mui/icons-material/LanguageRounded';
 import CalendarIcon from '@mui/icons-material/CalendarMonthOutlined';
-import FrameIcon from '@mui/icons-material/ViewInArOutlined';
-import WeightIcon from '@mui/icons-material/ScaleOutlined';
-import ChipIcon from '@mui/icons-material/MemoryOutlined';
 import ArrowIcon from '@mui/icons-material/ArrowForwardRounded';
 import HandoverIcon from '@mui/icons-material/HistoryEduOutlined';
 import BuildIcon from '@mui/icons-material/PrecisionManufacturingOutlined';
 import { api, useCollection, useGet, useLive } from '../api.js';
 import { Logo, StatusChip, duration, num } from '../ui.jsx';
-import { C, level, theme } from '../theme.js';
+import { C, LEVELS, level } from '../theme.js';
 import { useDictation } from '../StopConfirm.jsx';
 import { sensorsFor, useSensorCatalog, valueOf } from '../sensors.js';
 import PressCharacter, { EMOTIONS } from './PressCharacter.jsx';
 import { BCP, useVoice } from './useVoice.js';
 import Handovers from '../Handovers.jsx';
+import { BreakdownButton, FactorSim, useSim } from '../Simulate.jsx';
 import { AnatomyTab, EventDetail, EventFilter, EventList, FullScreen, SEV, SensorsTab, buildEvents, hhmm } from './Panels.jsx';
 
 const SESSION = 'drmacx.soul';
@@ -55,39 +52,14 @@ const GREET = {
   id: (n, c) => `Halo ${n}. Saya ${c}. Saya akan memberi tahu setiap kali ada perubahan.`,
 };
 
-// The kiosk is dark (a screen on the shop floor); light-only parts sit in white cards (Panels.jsx LightIsland).
-const kiosk = createTheme({
-  palette: {
-    mode: 'dark',
-    primary: { main: '#60A5FA' },
-    secondary: { main: '#FACC15', contrastText: '#111827' },
-    error: { main: '#EF4444' },
-    warning: { main: '#F59E0B' },
-    success: { main: '#22C55E' },
-    background: { default: '#070D1A', paper: '#0E1729' },
-    text: { primary: '#F1F5F9', secondary: '#9AA8BC' },
-    divider: 'rgba(148,163,184,0.18)',
-  },
-  shape: theme.shape,
-  typography: { ...theme.typography, overline: { ...theme.typography.overline, color: '#9AA8BC' } },
-  components: {
-    ...theme.components,
-    MuiCard: { defaultProps: { elevation: 0 }, styleOverrides: { root: { borderRadius: 18, backgroundImage: 'none', backgroundColor: '#0E1729', border: '1px solid rgba(148,163,184,0.14)' } } },
-    MuiDialog: { styleOverrides: { paper: { backgroundImage: 'none', backgroundColor: '#0B1324' } } },
-    MuiTableCell: {},
-  },
-});
-const LV = { good: { color: '#22C55E', label: 'On target' }, near: { color: '#FACC15', label: 'Near limit' }, below: { color: '#EF4444', label: 'Below target' } };
+// Target colours, same as the rest of the app (theme.js LEVELS); ring = the bar colour.
+const LV = Object.fromEntries(Object.entries(LEVELS).map(([k, v]) => [k, { ...v, ring: v.bar }]));
 
 export default function Soul() {
   const [session, setSession] = useState(load);
   const save = (v) => (store(v), setSession(v));
   if (!session.machineId || !session.operator) return <Gate session={session} onDone={save} />;
-  return (
-    <ThemeProvider theme={kiosk}>
-      <Main key={session.machineId} session={session} onChange={save} onExit={() => save({ lang: session.lang })} />
-    </ThemeProvider>
-  );
+  return <Main key={session.machineId} session={session} onChange={save} onExit={() => save({ lang: session.lang })} />;
 }
 
 // --- Step 1 + 2: pick the press, verify the employee number ---
@@ -178,7 +150,10 @@ function usePoll(path, ms) {
   return g;
 }
 
-const panel = { p: { xs: 1.5, md: 2 }, minHeight: 0, minWidth: 0 };
+// Compact sizes shared by the kiosk panels (px, so they do not scale with the theme's 12 px radius unit).
+const R = { panel: '12px', inner: '8px' };
+const panel = { p: 1.5, minHeight: 0, minWidth: 0, borderRadius: R.panel, boxShadow: 'none' };
+const tight = { minHeight: 36, height: 36, fontSize: 13.5 };
 
 // --- The main kiosk screen: one screen high on a desktop / kiosk, scrolls on small screens ---
 function Main({ session, onChange, onExit }) {
@@ -194,7 +169,7 @@ function Main({ session, onChange, onExit }) {
   const catalog = useSensorCatalog();
   const reduced = useMediaQuery('(prefers-reduced-motion: reduce)');
   const fit = useMediaQuery('(min-width:1200px) and (min-height:680px)');
-  const compact = useMediaQuery('(max-height:840px)'); // short kiosk screens: smaller ring, tighter bubble
+  const short = useMediaQuery('(max-height:780px)');
   const now = useNow();
   const voice = useVoice(lang, voiceOn);
   const row = live?.machines.find((m) => m.id === machineId);
@@ -251,8 +226,10 @@ function Main({ session, onChange, onExit }) {
   if (!row) return <Alert severity="warning" sx={{ m: 2 }}>This press is no longer monitored. <Button onClick={onExit}>Pick another</Button></Alert>;
 
   const emotion = emotionOf(row, now);
+  const mood = EMOTIONS[emotion];
   const question = messages.data?.find((m) => m.needsAnswer && !m.answered);
   const opened = openId && events.find((e) => e.id === openId);
+  const waiting = events.filter((e) => e.stop || e.needsAnswer).length; // stops and questions waiting for the operator
   const showAnatomy = (target) => (setLit(target), setTab('anatomy'), setOpenId(null), setAllEvents(false));
   const reload = () => (messages.reload(), pending.reload(), shiftStops.reload?.());
   const handlers = { onOpen: (e) => setOpenId(e.id), onAnatomy: showAnatomy, onAnswer: (q) => setTalk({ question: q }) };
@@ -281,7 +258,7 @@ function Main({ session, onChange, onExit }) {
   return (
     <Box
       sx={{
-        bgcolor: 'background.default', color: 'text.primary', p: { xs: 1, md: 1.5 }, gap: 1.5,
+        bgcolor: 'background.default', p: 1.5, gap: 1.5,
         minHeight: '100vh', height: fit ? '100vh' : 'auto', overflow: fit ? 'hidden' : 'visible',
         display: 'grid', gridTemplateRows: 'auto minmax(0,1fr)',
       }}
@@ -291,40 +268,42 @@ function Main({ session, onChange, onExit }) {
       <Box
         sx={{
           display: 'grid', gap: 1.5, minHeight: 0,
-          gridTemplateColumns: fit ? 'minmax(0,7fr) minmax(0,5fr)' : '1fr',
+          gridTemplateColumns: fit ? 'minmax(0,9fr) minmax(0,3fr)' : '1fr',
           gridTemplateRows: fit ? 'auto minmax(0,1fr) auto' : 'none',
           gridTemplateAreas: fit ? '"oee tabs" "soul tabs" "progress actions"' : '"oee" "soul" "progress" "actions" "tabs"',
         }}
       >
-        <OeePanel row={row} ring={compact ? 92 : 116} />
+        <OeePanel row={row} ring={short ? 124 : 148} />
 
-        <Card sx={{ ...panel, gridArea: 'soul', display: 'flex', flexDirection: 'column', gap: 1 }}>
-          <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
-            <Typography variant="h5" component="h2">Machine Soul</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ display: { xs: 'none', xl: 'block' } }}>Your AI assistant for this press</Typography>
-            <Chip size="small" label={`${EMOTIONS[emotion].label} mood`} sx={{ bgcolor: 'rgba(34,197,94,0.14)', color: '#86EFAC', fontWeight: 700 }} />
+        {/* Machine Soul: the face in its own area, what I said beside it */}
+        <Card sx={{ ...panel, gridArea: 'soul', display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+          <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
+            <Typography fontWeight={700} fontSize={16} component="h2">Machine Soul</Typography>
+            <Chip size="small" label={`${mood.label} mood`} sx={{ height: 22, fontSize: 12, bgcolor: `${mood.color}22`, color: C.ink, border: `1px solid ${mood.color}` }} />
+            <Typography variant="body2" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' } }}>Your AI assistant for this press · I speak when something changes</Typography>
             <Box flex={1} />
             <TextField
               select size="small" value={lang} onChange={(e) => onChange({ ...session, lang: e.target.value })}
-              slotProps={{ input: { startAdornment: <InputAdornment position="start"><GlobeIcon fontSize="small" /></InputAdornment> }, htmlInput: { 'aria-label': 'Kiosk language' } }}
-              sx={{ minWidth: 150 }}
+              slotProps={{ input: { startAdornment: <InputAdornment position="start"><GlobeIcon sx={{ fontSize: 18 }} /></InputAdornment> }, htmlInput: { 'aria-label': 'Kiosk language' } }}
+              sx={{ minWidth: 150, '& .MuiInputBase-root': tight, '& .MuiSelect-select': { py: 0 } }}
             >
               {Object.entries(languages).map(([k, v]) => <MenuItem key={k} value={k}>{v}</MenuItem>)}
             </TextField>
             <Tooltip title={voiceOn ? 'Mute my voice' : 'Turn my voice on'}>
-              <IconButton aria-label={voiceOn ? 'Mute voice' : 'Turn voice on'} onClick={() => onChange({ ...session, voice: !voiceOn })} sx={{ border: 1, borderColor: 'divider', width: 44, height: 44 }}>
-                {voiceOn ? <VolumeUpIcon /> : <VolumeOffIcon />}
+              <IconButton aria-label={voiceOn ? 'Mute voice' : 'Turn voice on'} onClick={() => onChange({ ...session, voice: !voiceOn })} sx={{ border: `1px solid ${C.line}`, borderRadius: R.inner, width: 36, height: 36 }}>
+                {voiceOn ? <VolumeUpIcon fontSize="small" /> : <VolumeOffIcon fontSize="small" />}
               </IconButton>
             </Tooltip>
           </Stack>
-          <Box sx={{ flex: 1, minHeight: 0, display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: 'minmax(0,5fr) minmax(0,7fr)' } }}>
-            <Box sx={{ position: 'relative', minHeight: compact ? 150 : 240, borderRadius: 3, background: 'radial-gradient(circle at 50% 75%, rgba(250,204,21,0.14), transparent 65%)' }}>
+          <Box sx={{ flex: 1, minHeight: 0, display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', sm: 'minmax(0,4fr) minmax(0,5fr)' } }}>
+            <Box sx={{ position: 'relative', minHeight: 220, borderRadius: R.inner, border: `1px solid ${C.line}`, background: `radial-gradient(circle at 50% 55%, ${C.light}, #FFFFFF 72%)`, overflow: 'hidden' }}>
               <Box sx={{ position: 'absolute', inset: 0 }}>
                 <PressCharacter emotion={emotion} talking={voice.talking} running={row.status === 'running'} reduced={reduced} />
               </Box>
+              {voice.talking && <Chip size="small" color="primary" icon={<WaveIcon />} label="Speaking…" sx={{ position: 'absolute', left: 10, bottom: 10 }} />}
             </Box>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, minHeight: 0, overflowY: 'auto' }}>
-              <Bubble lines={compact ? 2 : 3} messages={messages.data} question={question} talking={voice.talking} onReplay={(m) => voice.say(m.text)} onAnswer={() => setTalk({ question })} />
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, minHeight: 0 }}>
+              <Bubble messages={messages.data} question={question} talking={voice.talking} onReplay={(m) => voice.say(m.text)} onAnswer={() => setTalk({ question })} />
               <Recent messages={messages.data} events={events} onOpen={handlers.onOpen} onAll={() => setAllSaid(true)} />
             </Box>
           </Box>
@@ -332,12 +311,12 @@ function Main({ session, onChange, onExit }) {
 
         <Progress row={row} live={live} now={now} />
 
-        <Card sx={{ ...panel, gridArea: 'tabs', display: 'flex', flexDirection: 'column', gap: 1.25, height: fit ? 'auto' : 680 }}>
+        <Card sx={{ ...panel, p: 1.25, gridArea: 'tabs', display: 'flex', flexDirection: 'column', gap: 1, height: fit ? 'auto' : 640 }}>
           <Tabs
             value={tab} onChange={(e, v) => setTab(v)} variant="fullWidth"
-            sx={{ minHeight: 48, bgcolor: 'rgba(148,163,184,0.08)', borderRadius: 3, p: 0.5, '& .MuiTabs-indicator': { display: 'none' }, '& .MuiTab-root': { minHeight: 44, borderRadius: 2.5, color: 'text.secondary' }, '& .Mui-selected': { bgcolor: '#F8FAFC', color: '#0F172A !important' } }}
+            sx={{ minHeight: 36, borderBottom: 1, borderColor: 'divider', '& .MuiTab-root': { minHeight: 36, py: 0, fontSize: 13.5, px: 1 } }}
           >
-            <Tab value="events" label={<Stack direction="row" gap={1} alignItems="center">Events{pending.data?.length > 0 && <Chip size="small" color="error" label={`${pending.data.length} waiting`} sx={{ height: 22 }} />}</Stack>} />
+            <Tab value="events" label={<Stack direction="row" gap={0.75} alignItems="center">Events{waiting > 0 && <Chip size="small" color="error" label={waiting} sx={{ height: 18, fontSize: 11, '& .MuiChip-label': { px: 0.75 } }} />}</Stack>} />
             <Tab value="sensors" label="Sensors" />
             <Tab value="anatomy" label="Anatomy" />
           </Tabs>
@@ -345,23 +324,23 @@ function Main({ session, onChange, onExit }) {
             <Stack direction="row" alignItems="center" gap={1}>
               <EventFilter value={filter} onChange={setFilter} />
               <Box flex={1} />
-              <Button endIcon={<ArrowIcon />} onClick={() => setAllEvents(true)}>Show all</Button>
+              <Button size="small" endIcon={<ArrowIcon />} onClick={() => setAllEvents(true)} sx={{ minHeight: 32 }}>Show all</Button>
             </Stack>
           )}
-          <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pr: 0.5 }}>
+          <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pr: 0.25 }}>
             {tab === 'events' && (messages.data ? <EventList events={events} filter={filter} dense {...handlers} /> : <LinearProgress />)}
             {tab === 'sensors' && <SensorsTab row={row} sensors={sensors} log={log.current} operator={operator} onPick={showAnatomy} />}
             {tab === 'anatomy' && <AnatomyTab row={row} sensors={sensors} lit={lit} onClear={() => setLit(null)} events={events} onOpen={handlers.onOpen} />}
           </Box>
         </Card>
 
-        <Box sx={{ gridArea: 'actions', display: 'grid', gap: 1.5, gridTemplateColumns: fit ? '1fr' : '1fr 1fr' }}>
-          <Button variant="contained" color="secondary" onClick={ask} disabled={asking} startIcon={asking ? <CircularProgress size={22} color="inherit" /> : <ChatIcon />} sx={{ minHeight: 60, fontSize: 19, fontWeight: 800, borderRadius: 3 }}>
+        <Box sx={{ gridArea: 'actions', display: 'grid', gap: 1, gridTemplateColumns: fit ? '1fr' : '1fr 1fr', alignContent: 'end' }}>
+          <Button variant="contained" onClick={ask} disabled={asking} startIcon={asking ? <CircularProgress size={18} color="inherit" /> : <ChatIcon />} sx={{ minHeight: 46, fontSize: 15, fontWeight: 700, borderRadius: R.inner }}>
             {asking ? 'Reading my sensors…' : 'Ask Dr. Macx'}
           </Button>
           <Button
-            variant="outlined" color={question ? 'warning' : 'inherit'} onClick={() => setTalk({ question })} startIcon={<WaveIcon />}
-            sx={{ minHeight: 60, fontSize: 19, fontWeight: 700, borderRadius: 3, borderColor: question ? undefined : 'divider' }}
+            variant="outlined" color={question ? 'warning' : 'primary'} onClick={() => setTalk({ question })} startIcon={<WaveIcon />}
+            sx={{ minHeight: 46, fontSize: 15, fontWeight: 700, borderRadius: R.inner, bgcolor: '#FFFFFF', borderWidth: question ? 2 : 1, '&:hover': { borderWidth: question ? 2 : 1 } }}
           >
             {question ? 'Answer my question' : 'Explain by voice'}
           </Button>
@@ -375,13 +354,13 @@ function Main({ session, onChange, onExit }) {
         />
       )}
       <FullScreen open={allEvents} onClose={() => setAllEvents(false)} title="All events this shift" actions={<EventFilter value={filter} onChange={setFilter} />}>
-        <EventList events={events} filter={filter} {...handlers} />
+        <Box sx={{ maxWidth: 960 }}><EventList events={events} filter={filter} {...handlers} /></Box>
       </FullScreen>
       <FullScreen open={allSaid} onClose={() => setAllSaid(false)} title="What I said">
         <SaidList messages={messages.data} onReplay={(m) => voice.say(m.text)} onAnatomy={(t) => (setAllSaid(false), showAnatomy(t))} />
       </FullScreen>
       <FullScreen open={handovers} onClose={() => setHandovers(false)} title="Shift handovers">
-        {handovers && <ThemeProvider theme={theme}><Box sx={{ bgcolor: '#fff', borderRadius: 3, p: 2 }}><Handovers machineId={machineId} /></Box></ThemeProvider>}
+        {handovers && <Box sx={{ maxWidth: 960 }}><Handovers machineId={machineId} /></Box>}
       </FullScreen>
       {talk && <VoiceDialog machineId={machineId} operator={operator} lang={lang} question={talk.question} onClose={() => setTalk(null)} onDone={reload} />}
       <Snackbar open={!!toast} autoHideDuration={6000} onClose={() => setToast('')}>
@@ -391,15 +370,12 @@ function Main({ session, onChange, onExit }) {
   );
 }
 
-function Spec({ icon: Icon, label, value }) {
+function Spec({ label, value }) {
   return (
-    <Stack direction="row" gap={1.25} alignItems="center" minWidth={0}>
-      <Icon sx={{ color: 'text.secondary', fontSize: 28, display: { xs: 'none', xl: 'block' } }} />
-      <Box minWidth={0}>
-        <Typography variant="caption" color="text.secondary" component="div" noWrap>{label}</Typography>
-        <Typography fontWeight={700} noWrap>{value}</Typography>
-      </Box>
-    </Stack>
+    <Box minWidth={0} sx={{ flex: 'none' }}>
+      <Typography variant="caption" color="text.secondary" component="div" noWrap sx={{ fontSize: 11.5, lineHeight: 1.3 }}>{label}</Typography>
+      <Typography fontWeight={700} fontSize={14} noWrap sx={{ lineHeight: 1.3 }}>{value}</Typography>
+    </Box>
   );
 }
 
@@ -407,66 +383,62 @@ const FRAME = { 'straight-side': 'Straight-side', 'c-frame': 'C-frame' };
 
 function TopBar({ row, live, now, presses, operator, onSwitch, onHandovers, onExit }) {
   const setup = row.setup === 'premium' ? 'Premium' : 'Essential';
+  const iconBtn = { border: `1px solid ${C.line}`, borderRadius: R.inner, width: 36, height: 36 };
   return (
-    <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', lg: 'minmax(0,7fr) minmax(0,5fr)' } }}>
-      <Card sx={{ px: 2, py: 1.25, display: 'flex', alignItems: 'center', columnGap: { xs: 1.5, xl: 2.5 }, rowGap: 1, flexWrap: 'wrap', minWidth: 0 }}>
-        <Stack direction="row" gap={1.5} alignItems="center" minWidth={0}>
-          <Box sx={{ width: 52, height: 52, borderRadius: 2.5, bgcolor: 'rgba(250,204,21,0.14)', display: 'grid', placeItems: 'center', flex: 'none' }}>
-            <BuildIcon sx={{ color: '#FACC15', fontSize: 30 }} />
-          </Box>
-          <Box minWidth={0}>
-            <Stack direction="row" gap={1} alignItems="center">
-              <TextField
-                select variant="standard" value={row.id} onChange={(e) => onSwitch(e.target.value)}
-                slotProps={{ input: { disableUnderline: true }, htmlInput: { 'aria-label': 'Change press' }, select: { renderValue: () => row.code } }}
-                sx={{ '& .MuiSelect-select': { fontSize: 26, fontWeight: 800, py: 0, pr: '28px !important' } }}
-              >
-                {presses.map((m) => <MenuItem key={m.id} value={m.id}>{m.code} · {m.name}</MenuItem>)}
-              </TextField>
-              <StatusChip status={row.status} />
-            </Stack>
-            <Typography color="text.secondary" noWrap>{row.line} · {operator.name} ({operator.code})</Typography>
-          </Box>
-        </Stack>
-        <Spec icon={FrameIcon} label="Press type" value={FRAME[row.frameType] ?? row.frameType} />
-        <Spec icon={WeightIcon} label="Rated tonnage" value={`${row.ratedTonnage} t`} />
-        <Spec icon={ChipIcon} label="Sensor setup" value={row.setup === 'premium' ? `${setup} (${row.nodes} nodes)` : setup} />
-      </Card>
-      <Card sx={{ px: 2, py: 1.25, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-        <Box flex={1} />
-        <Spec
-          icon={CalendarIcon}
-          label={new Date(now).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
-          value={new Date(now).toLocaleTimeString([], { hourCycle: 'h23' })}
-        />
-        <Chip label={`${live.shift.name} · ${hhmm(live.shift.start)}–${hhmm(live.shift.end)}`} sx={{ bgcolor: '#FACC15', color: '#111827', fontWeight: 800, height: 40, px: 0.5, fontSize: 15 }} />
-        <Tooltip title="Shift handovers">
-          <IconButton aria-label="Shift handovers" onClick={onHandovers} sx={{ border: 1, borderColor: 'divider' }}><HandoverIcon /></IconButton>
-        </Tooltip>
-        <Tooltip title="Sign out">
-          <IconButton aria-label="Sign out" onClick={onExit} sx={{ border: 1, borderColor: 'divider' }}><LogoutIcon /></IconButton>
-        </Tooltip>
-      </Card>
-    </Box>
+    <Card sx={{ ...panel, px: 1.5, py: 0.75, display: 'flex', alignItems: 'center', columnGap: 2.5, rowGap: 1, flexWrap: 'wrap' }}>
+      <Stack direction="row" gap={1.25} alignItems="center" minWidth={0}>
+        <Box sx={{ width: 36, height: 36, borderRadius: R.inner, bgcolor: C.light, display: 'grid', placeItems: 'center', flex: 'none' }}>
+          <BuildIcon sx={{ color: C.blue, fontSize: 22 }} />
+        </Box>
+        <Box minWidth={0}>
+          <Stack direction="row" gap={1} alignItems="center">
+            <TextField
+              select variant="standard" value={row.id} onChange={(e) => onSwitch(e.target.value)}
+              slotProps={{ input: { disableUnderline: true }, htmlInput: { 'aria-label': 'Change press' }, select: { renderValue: () => row.code } }}
+              sx={{ '& .MuiSelect-select': { fontSize: 19, fontWeight: 800, py: 0, pr: '24px !important', lineHeight: 1.2 } }}
+            >
+              {presses.map((m) => <MenuItem key={m.id} value={m.id}>{m.code} · {m.name}</MenuItem>)}
+            </TextField>
+            <StatusChip status={row.status} />
+          </Stack>
+          <Typography variant="caption" color="text.secondary" noWrap component="div">{row.line} · {operator.name} ({operator.code})</Typography>
+        </Box>
+      </Stack>
+      <Box sx={{ width: '1px', alignSelf: 'stretch', bgcolor: C.line, display: { xs: 'none', md: 'block' } }} />
+      <Spec label="Press type" value={FRAME[row.frameType] ?? row.frameType} />
+      <Spec label="Rated tonnage" value={`${row.ratedTonnage} t`} />
+      <Spec label="Sensor setup" value={row.setup === 'premium' ? `${setup} · ${row.nodes} nodes` : setup} />
+      <Box flex={1} />
+      <Stack direction="row" gap={1} alignItems="center">
+        <CalendarIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
+        <Spec label={new Date(now).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })} value={new Date(now).toLocaleTimeString([], { hourCycle: 'h23' })} />
+      </Stack>
+      <Chip label={`${live.shift.name} · ${hhmm(live.shift.start)}–${hhmm(live.shift.end)}`} sx={{ bgcolor: C.light, color: C.blueDark, fontWeight: 700, height: 32, borderRadius: R.inner }} />
+      <Stack direction="row" gap={0.75}>
+        <Tooltip title="Shift handovers"><IconButton aria-label="Shift handovers" onClick={onHandovers} sx={iconBtn}><HandoverIcon fontSize="small" /></IconButton></Tooltip>
+        <Tooltip title="Sign out"><IconButton aria-label="Sign out" onClick={onExit} sx={iconBtn}><LogoutIcon fontSize="small" /></IconButton></Tooltip>
+      </Stack>
+    </Card>
   );
 }
 
-function Ring({ value, color, size = 150 }) {
-  const r = (size - 18) / 2;
+function Ring({ value, color, size = 148 }) {
+  const stroke = Math.round(size * 0.09);
+  const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   const v = Math.max(0, Math.min(1, value ?? 0));
   return (
     <Box sx={{ position: 'relative', width: size, height: size, flex: 'none' }} role="img" aria-label={`OEE ${value == null ? 'not available' : `${Math.round(v * 100)} percent`}`}>
       <svg width={size} height={size}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(148,163,184,0.18)" strokeWidth="14" />
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth="14" strokeLinecap="round" strokeDasharray={`${c * v} ${c}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#E2E8F0" strokeWidth={stroke} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round" strokeDasharray={`${c * v} ${c}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
       </svg>
       <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', textAlign: 'center' }}>
         <Box>
-          <Typography sx={{ fontSize: size * 0.27, fontWeight: 800, lineHeight: 1 }}>
-            {value == null ? '—' : Math.round(v * 100)}<Typography component="span" sx={{ fontSize: size * 0.12, fontWeight: 800 }}>%</Typography>
+          <Typography sx={{ fontSize: size * 0.29, fontWeight: 800, lineHeight: 1, color: C.ink, letterSpacing: '-0.03em' }}>
+            {value == null ? '—' : Math.round(v * 100)}<Typography component="span" sx={{ fontSize: size * 0.13, fontWeight: 800 }}>%</Typography>
           </Typography>
-          <Typography sx={{ fontWeight: 700, color: 'text.secondary', letterSpacing: '0.06em' }}>OEE</Typography>
+          <Typography sx={{ fontWeight: 700, fontSize: 13, color: 'text.secondary', letterSpacing: '0.08em' }}>OEE</Typography>
         </Box>
       </Box>
     </Box>
@@ -476,39 +448,44 @@ function Ring({ value, color, size = 150 }) {
 const hours = (sec) => (sec / 3600).toFixed(1);
 
 function OeePanel({ row, ring }) {
+  const sim = useSim(row); // simulation controls show only for dummy-generator presses (row.sim)
   const lv = (k) => LV[level(row[k], row.targets?.[k])];
   const good = row.total - row.ng;
   const factors = [
     { key: 'availability', label: 'Availability', sub: 'Run time', value: `${hours(row.runSec ?? 0)} / ${hours(row.plannedSec ?? 0)} h` },
-    { key: 'performance', label: 'Performance', sub: 'Actual / ideal cycle', value: `${row.total ? ((row.runSec ?? 0) / row.total).toFixed(1) : '—'} / ${row.idealCycleTime} s` },
+    { key: 'performance', label: 'Performance', sub: 'CT', value: `${row.total ? ((row.runSec ?? 0) / row.total).toFixed(1) : '—'} / ${row.idealCycleTime} s` },
     { key: 'quality', label: 'Quality', sub: 'Good parts', value: `${num(good)} / ${num(row.total)}` },
   ];
   const o = lv('oee');
   return (
-    <Card sx={{ ...panel, gridArea: 'oee' }}>
-      <Stack direction="row" alignItems="center" gap={1} mb={0.75} flexWrap="wrap">
-        <Typography variant="h6" component="h2" flex={1}>Overall Equipment Effectiveness</Typography>
-        {o && <Typography variant="body2" fontWeight={700} sx={{ color: o.color }}>{o.label} (target {row.targets?.oee?.target}%)</Typography>}
-      </Stack>
-      <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: { xs: 'wrap', sm: 'nowrap' } }}>
-        <Ring value={row.oee} color={o?.color ?? '#60A5FA'} size={ring} />
-        <Box sx={{ flex: 1, flexBasis: { xs: '100%', sm: 0 }, display: 'grid', gap: 1.25, gridTemplateColumns: 'repeat(3, minmax(0,1fr))', minWidth: 0 }}>
+    <Card sx={{ ...panel, gridArea: 'oee', display: 'flex', gap: 2.5, alignItems: 'center', flexWrap: { xs: 'wrap', sm: 'nowrap' } }}>
+      <Ring value={row.oee} color={o?.ring ?? C.blue} size={ring} />
+      <Box sx={{ flex: 1, minWidth: 0, flexBasis: { xs: '100%', sm: 0 } }}>
+        <Stack direction="row" alignItems="center" gap={1} mb={1.25} flexWrap="wrap">
+          <Typography fontWeight={700} fontSize={16} component="h2" flex={1}>Overall Equipment Effectiveness</Typography>
+          {row.sim && <BreakdownButton sim={sim} />}
+          {o && <Chip size="small" label={`${o.label} · target ${row.targets?.oee?.target}%`} sx={{ height: 24, bgcolor: o.bg, color: o.color, fontWeight: 700 }} />}
+        </Stack>
+        {sim.error && <Typography variant="caption" color="error" component="div" mb={0.5}>{sim.error}</Typography>}
+        <Box sx={{ display: 'grid', gap: 1, gridTemplateColumns: 'repeat(3, minmax(0,1fr))' }}>
           {factors.map((f) => {
             const l = lv(f.key);
             return (
-              <Box key={f.key} sx={{ px: 1.5, py: 1.25, borderRadius: 3, bgcolor: 'rgba(148,163,184,0.07)', border: 1, borderColor: 'divider', minWidth: 0 }}>
-                <Typography variant="body2" color="text.secondary" noWrap>{f.label}</Typography>
-                <Stack direction="row" gap={1} alignItems="center" my={0.5}>
-                  <Box sx={{ width: 6, height: 36, borderRadius: 3, bgcolor: l?.color ?? '#64748B', flex: 'none' }} />
-                  <Typography sx={{ fontSize: { xs: 26, xl: 32 }, fontWeight: 800, lineHeight: 1 }}>
-                    {row[f.key] == null ? '—' : Math.round(row[f.key] * 100)}<Typography component="span" sx={{ fontSize: 16, fontWeight: 800 }}>%</Typography>
+              <Box key={f.key} sx={{ px: 1.25, py: 1, borderRadius: R.inner, border: `1px solid ${C.line}`, minWidth: 0 }}>
+                <Stack direction="row" alignItems="baseline" gap={1}>
+                  <Typography variant="body2" color="text.secondary" noWrap flex={1}>{f.label}</Typography>
+                  <Typography variant="caption" noWrap sx={{ color: l?.color ?? 'text.secondary', fontWeight: 700 }}>{l?.label ?? 'No data'}</Typography>
+                </Stack>
+                <Stack direction="row" gap={1} alignItems="center" my={0.25}>
+                  <Box sx={{ width: 4, height: 24, borderRadius: 2, bgcolor: l?.ring ?? '#94A3B8', flex: 'none' }} />
+                  <Typography sx={{ fontSize: 24, fontWeight: 800, lineHeight: 1.1 }}>
+                    {row[f.key] == null ? '—' : Math.round(row[f.key] * 100)}<Typography component="span" sx={{ fontSize: 14, fontWeight: 800 }}>%</Typography>
                   </Typography>
                 </Stack>
-                <Typography variant="caption" component="div" noWrap>
-                  <Box component="span" sx={{ color: l?.color ?? 'text.secondary', fontWeight: 700 }}>{l?.label ?? 'No data'}</Box>
-                  <Box component="span" sx={{ color: 'text.secondary' }}> · {f.sub}</Box>
-                </Typography>
-                <Typography variant="body2" fontWeight={700} noWrap>{f.value}</Typography>
+                <Stack direction="row" alignItems="center" gap={1}>
+                  <Typography variant="caption" color="text.secondary" noWrap component="div" flex={1} minWidth={0}>{f.sub} <b style={{ color: C.ink }}>{f.value}</b></Typography>
+                  {row.sim && <FactorSim m={row} factor={f.key} sim={sim} />}
+                </Stack>
               </Box>
             );
           })}
@@ -518,26 +495,25 @@ function OeePanel({ row, ring }) {
   );
 }
 
-// The latest thing the press said, as a speech bubble (or its open question).
-function Bubble({ messages, question, talking, onReplay, onAnswer, lines }) {
+// The latest thing the press said, as a speech bubble (or its open question: tap to answer).
+function Bubble({ messages, question, talking, onReplay, onAnswer }) {
   const last = question ?? messages?.find((m) => m.kind !== 'operator');
   return (
     <Box
-      sx={{ position: 'relative', flex: 'none', bgcolor: '#E6F6FB', color: '#0F172A', borderRadius: 4, p: lines < 3 ? 1.5 : 2, pr: 7, cursor: question ? 'pointer' : 'default' }}
+      sx={{ position: 'relative', flex: 'none', bgcolor: question ? LEVELS.near.bg : C.light, border: `1px solid ${question ? '#FFE082' : '#BBDEFB'}`, borderRadius: R.inner, p: 1.25, pr: 6, cursor: question ? 'pointer' : 'default' }}
       aria-live="polite" onClick={question ? onAnswer : undefined}
     >
-      <Box sx={{ position: 'absolute', left: -11, top: 30, width: 0, height: 0, borderTop: '10px solid transparent', borderBottom: '10px solid transparent', borderRight: '12px solid #E6F6FB', display: { xs: 'none', sm: 'block' } }} />
-      {question && <Chip size="small" label="Question for you · tap to answer" sx={{ bgcolor: '#FEF3C7', color: '#92400E', fontWeight: 700, mb: 0.75 }} />}
-      <Typography sx={{ fontSize: 17, fontWeight: 600, lineHeight: 1.45, display: '-webkit-box', WebkitLineClamp: lines, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-        {last?.text ?? 'Hello! I will tell you when something changes. Ask me anything with the buttons below.'}
+      {question && <Typography variant="caption" fontWeight={700} sx={{ color: LEVELS.near.color }} component="div">Question for you · tap to answer</Typography>}
+      <Typography sx={{ fontSize: 15, fontWeight: 600, lineHeight: 1.45, color: C.ink, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+        {last?.text ?? 'Hello! I will tell you when something changes. Ask me anything with the buttons on the right.'}
       </Typography>
       {last && (
         <Tooltip title={talking ? 'Speaking…' : 'Say it again'}>
           <IconButton
             aria-label="Say it again" onClick={(ev) => (ev.stopPropagation(), onReplay(last))}
-            sx={{ position: 'absolute', right: 10, top: 10, bgcolor: '#DBEAFE', color: '#1D4ED8', '&:hover': { bgcolor: '#BFDBFE' }, animation: talking ? 'soulPulse 1s ease-in-out infinite' : 'none', '@keyframes soulPulse': { '50%': { transform: 'scale(1.12)' } } }}
+            sx={{ position: 'absolute', right: 8, top: 8, width: 32, height: 32, bgcolor: '#FFFFFF', color: C.blue, border: `1px solid ${C.line}`, '&:hover': { bgcolor: '#F8FAFC' }, animation: talking ? 'soulPulse 1s ease-in-out infinite' : 'none', '@keyframes soulPulse': { '50%': { transform: 'scale(1.12)' } } }}
           >
-            <WaveIcon />
+            <WaveIcon fontSize="small" />
           </IconButton>
         </Tooltip>
       )}
@@ -546,29 +522,31 @@ function Bubble({ messages, question, talking, onReplay, onAnswer, lines }) {
 }
 
 const DOT = { stop: SEV.error.color, anomaly: SEV.warn.color, risk: SEV.warn.color, question: SEV.warn.color, report: SEV.ok.color, cycle: SEV.info.color, handover: SEV.info.color, advice: SEV.info.color, operator: '#94A3B8' };
+const KIND = { advice: 'Advice', report: 'Report', operator: 'You said', stop: 'Stop', risk: 'Target risk', question: 'Question', anomaly: 'Sensor alert', cycle: 'Cycle time', handover: 'Handover', info: 'Info' };
 
 function Recent({ messages, events, onOpen, onAll }) {
   const byMessage = new Map(events.filter((e) => e.message).map((e) => [e.message.id, e]));
   return (
-    <Box sx={{ flex: 1, minHeight: 150, maxHeight: { xs: 280, lg: 'none' }, display: 'flex', flexDirection: 'column', border: 1, borderColor: 'divider', borderRadius: 3, p: 1.5 }}>
-      <Stack direction="row" alignItems="center" mb={0.5}>
-        <Typography fontWeight={700} flex={1}>Recent messages</Typography>
-        <Button size="small" endIcon={<ArrowIcon />} onClick={onAll}>View all</Button>
+    <Box sx={{ flex: 1, minHeight: 140, maxHeight: { xs: 300, lg: 'none' }, display: 'flex', flexDirection: 'column', border: `1px solid ${C.line}`, borderRadius: R.inner }}>
+      <Stack direction="row" alignItems="center" sx={{ px: 1.25, py: 0.5, borderBottom: `1px solid ${C.line}` }}>
+        <Typography fontWeight={700} fontSize={13.5} flex={1}>Recent messages</Typography>
+        <Button size="small" endIcon={<ArrowIcon />} onClick={onAll} sx={{ minHeight: 28, py: 0 }}>View all</Button>
       </Stack>
-      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', py: 0.5 }}>
         {!messages && <LinearProgress />}
-        {messages?.length === 0 && <Typography variant="body2" color="text.secondary">Nothing yet.</Typography>}
+        {messages?.length === 0 && <Typography variant="body2" color="text.secondary" sx={{ px: 1.25 }}>Nothing yet.</Typography>}
         {messages?.map((m) => {
           const e = byMessage.get(m.id);
           return (
             <Stack
-              key={m.id} direction="row" gap={1.25} alignItems="center" onClick={e ? () => onOpen(e) : undefined}
+              key={m.id} direction="row" gap={1} alignItems="center" onClick={e ? () => onOpen(e) : undefined}
               role={e ? 'button' : undefined} tabIndex={e ? 0 : undefined} onKeyDown={e ? (ev) => ev.key === 'Enter' && onOpen(e) : undefined}
-              sx={{ py: 0.6, px: 0.5, borderRadius: 1.5, cursor: e ? 'pointer' : 'default', '&:hover': e ? { bgcolor: 'action.hover' } : undefined }}
+              sx={{ minHeight: 30, px: 1.25, cursor: e ? 'pointer' : 'default', '&:hover': e ? { bgcolor: '#F8FAFC' } : undefined }}
             >
-              <Box sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: DOT[m.kind] ?? '#94A3B8', flex: 'none' }} />
-              <Typography variant="body2" color="text.secondary" sx={{ width: 42, flex: 'none' }}>{hhmm(m.at)}</Typography>
-              <Typography variant="body2" noWrap flex={1}>{m.kind === 'operator' ? `You: ${m.text}` : m.text}</Typography>
+              <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: DOT[m.kind] ?? '#94A3B8', flex: 'none' }} />
+              <Typography variant="body2" color="text.secondary" sx={{ width: 40, flex: 'none', fontSize: 12.5 }}>{hhmm(m.at)}</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ width: 84, flex: 'none', fontSize: 12 }} noWrap>{KIND[m.kind] ?? m.kind}</Typography>
+              <Typography variant="body2" noWrap flex={1} sx={{ fontSize: 13 }}>{m.text}</Typography>
             </Stack>
           );
         })}
@@ -577,22 +555,20 @@ function Recent({ messages, events, onOpen, onAll }) {
   );
 }
 
-const KIND = { advice: 'Advice', report: 'Report', operator: 'You said', stop: 'Stop', risk: 'Target risk', question: 'Question', anomaly: 'Sensor alert', cycle: 'Cycle time', handover: 'Handover', info: 'Info' };
-
 function SaidList({ messages, onReplay, onAnatomy }) {
   return (
-    <Stack spacing={1.25} sx={{ maxWidth: 960 }}>
+    <Stack spacing={1} sx={{ maxWidth: 960 }}>
       {messages?.map((m) => (
-        <Box key={m.id} sx={{ p: 1.5, borderRadius: 3, border: 1, borderColor: m.needsAnswer && !m.answered ? SEV.warn.line : 'divider', bgcolor: m.kind === 'operator' ? 'rgba(96,165,250,0.08)' : 'transparent' }}>
-          <Stack direction="row" alignItems="center" gap={1} mb={0.5}>
+        <Box key={m.id} sx={{ p: 1.25, borderRadius: R.inner, border: `1px solid ${m.needsAnswer && !m.answered ? SEV.warn.line : C.line}`, bgcolor: m.kind === 'operator' ? C.light : '#FFFFFF' }}>
+          <Stack direction="row" alignItems="center" gap={1} mb={0.25}>
             <Typography variant="caption" fontWeight={700} color="text.secondary">{new Date(m.at).toLocaleString()}</Typography>
-            <Chip size="small" label={KIND[m.kind] ?? m.kind} sx={{ height: 22 }} />
+            <Chip size="small" label={KIND[m.kind] ?? m.kind} sx={{ height: 20, fontSize: 11 }} />
             <Box flex={1} />
             {m.kind !== 'operator' && <IconButton size="small" aria-label="Say it again" onClick={() => onReplay(m)}><ReplayIcon fontSize="small" /></IconButton>}
           </Stack>
-          <Typography>{m.text}</Typography>
+          <Typography variant="body2">{m.text}</Typography>
           {(m.data?.part || m.data?.node) && (
-            <Button size="small" onClick={() => onAnatomy({ part: m.data.node ? 'loadCell' : m.data.part, node: m.data.node || null })} sx={{ mt: 0.5 }}>View in anatomy</Button>
+            <Button size="small" onClick={() => onAnatomy({ part: m.data.node ? 'loadCell' : m.data.part, node: m.data.node || null })} sx={{ mt: 0.5, minHeight: 28 }}>View in anatomy</Button>
           )}
           {m.data?.actions?.length > 0 && (
             <Box component="ul" sx={{ m: 0, mt: 0.5, pl: 2.5 }}>{m.data.actions.map((a, i) => <Typography key={i} component="li" variant="body2" color="text.secondary">{a}</Typography>)}</Box>
@@ -613,33 +589,32 @@ function Progress({ row, live, now }) {
   const projected = Math.round(good + rate * remainingSec);
   const share = plan.shift ? good / plan.shift : 0;
   const k = level(plan.toNow ? good / plan.toNow : null, row.targets?.oee);
-  const bar = { good: '#22C55E', near: '#FACC15', below: '#EF4444' }[k] ?? '#60A5FA';
   const diff = projected - plan.shift;
+  const signed = (v) => <Box component="span" sx={{ color: v < 0 ? LEVELS.below.color : LEVELS.good.color }}>{v >= 0 ? '+' : ''}{num(v)}</Box>;
   const stat = (label, value) => (
-    <Box minWidth={0}>
+    <Stack direction="row" alignItems="baseline" gap={1} minWidth={0}>
       <Typography variant="body2" color="text.secondary" noWrap>{label}</Typography>
-      <Typography component="div" sx={{ fontSize: { xs: 20, xl: 24 }, fontWeight: 800, lineHeight: 1.2 }} noWrap>{value}</Typography>
-    </Box>
+      <Typography component="div" sx={{ fontSize: 15, fontWeight: 700 }} noWrap>{value}</Typography>
+    </Stack>
   );
-  const signed = (v) => <Box component="span" sx={{ color: v < 0 ? '#F87171' : '#4ADE80' }}>{v >= 0 ? '+' : ''}{num(v)}</Box>;
   return (
-    <Card sx={{ ...panel, gridArea: 'progress' }}>
-      <Stack direction="row" alignItems="baseline" gap={1} flexWrap="wrap">
-        <Typography variant="h6" component="h2" flex={1}>Production progress ({live.shift.name})</Typography>
-        <Typography variant="body2" color="text.secondary">{duration(Math.max(0, live.shift.end - now))} left · plan = planned time ÷ ideal cycle ({row.idealCycleTime} s)</Typography>
+    <Card sx={{ ...panel, py: 1.25, gridArea: 'progress' }}>
+      <Stack direction="row" alignItems="center" gap={1.5}>
+        <Typography fontWeight={700} fontSize={14} component="h2" noWrap>Production progress · {live.shift.name}</Typography>
+        <Typography variant="caption" color="text.secondary" noWrap sx={{ flex: 1, minWidth: 0 }}>
+          {duration(Math.max(0, live.shift.end - now))} left · plan = planned time ÷ ideal cycle ({row.idealCycleTime} s)
+        </Typography>
+        <Typography sx={{ fontSize: 18, fontWeight: 800, lineHeight: 1 }}>{Math.round(share * 100)}%</Typography>
       </Stack>
-      <Stack direction="row" alignItems="center" gap={2} my={0.5}>
-        <Box sx={{ position: 'relative', flex: 1, height: 14, borderRadius: 8, bgcolor: 'rgba(148,163,184,0.18)', overflow: 'hidden' }} role="img" aria-label={`Good ${good} of ${plan.shift} planned this shift; ${plan.toNow} due by now`}>
-          <Box sx={{ position: 'absolute', inset: 0, width: `${Math.min(100, share * 100)}%`, bgcolor: bar, borderRadius: 8 }} />
-          <Box sx={{ position: 'absolute', top: 0, bottom: 0, left: `${plan.shift ? Math.min(100, (plan.toNow / plan.shift) * 100) : 0}%`, width: 3, bgcolor: '#F8FAFC' }} />
-        </Box>
-        <Typography sx={{ fontSize: 26, fontWeight: 800 }}>{Math.round(share * 100)}%</Typography>
-      </Stack>
-      <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: 'repeat(4, minmax(0,1fr))' }}>
-        {stat('Good parts', <>{num(good)} <Box component="span" sx={{ color: 'text.secondary', fontSize: '0.7em' }}>/ {num(plan.shift)}</Box></>)}
+      <Box sx={{ position: 'relative', height: 10, my: 1, borderRadius: 5, bgcolor: '#E2E8F0', overflow: 'hidden' }} role="img" aria-label={`Good ${good} of ${plan.shift} planned this shift; ${plan.toNow} due by now`}>
+        <Box sx={{ position: 'absolute', inset: 0, width: `${Math.min(100, share * 100)}%`, bgcolor: k ? LEVELS[k].bar : C.blue, borderRadius: 5 }} />
+        <Box sx={{ position: 'absolute', top: 0, bottom: 0, left: `${plan.shift ? Math.min(100, (plan.toNow / plan.shift) * 100) : 0}%`, width: 2, bgcolor: C.ink }} />
+      </Box>
+      <Box sx={{ display: 'grid', columnGap: 2, rowGap: 0.5, gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, auto)' }, justifyContent: 'space-between' }}>
+        {stat('Good parts', <>{num(good)} <Box component="span" sx={{ color: 'text.secondary', fontSize: 12.5 }}>/ {num(plan.shift)}</Box></>)}
         {stat('Planned by now', num(plan.toNow))}
         {stat('Gap', signed(gap))}
-        {stat('Projected end of shift', <>{num(projected)} <Box component="span" sx={{ fontSize: '0.7em' }}>({signed(diff)})</Box></>)}
+        {stat('Projected end of shift', <>{num(projected)} <Box component="span" sx={{ fontSize: 12.5 }}>({signed(diff)})</Box></>)}
       </Box>
     </Card>
   );
@@ -667,14 +642,14 @@ function VoiceDialog({ machineId, operator, lang, question, onClose, onDone }) {
     <Dialog open onClose={onClose} fullWidth maxWidth="sm">
       <DialogTitle>{question ? 'Answer my question' : 'Explain by voice'}</DialogTitle>
       <DialogContent>
-        {question && <Box sx={{ p: 1.5, mb: 2, borderRadius: 3, bgcolor: SEV.warn.bg, border: `1px solid ${SEV.warn.line}` }}><Typography>{question.text}</Typography></Box>}
+        {question && <Box sx={{ p: 1.5, mb: 2, borderRadius: '8px', bgcolor: SEV.warn.bg, border: `1px solid ${SEV.warn.line}` }}><Typography>{question.text}</Typography></Box>}
         <Typography color="text.secondary" mb={2}>Press the mic and tell me what happened, in any language. I check it against my sensors and keep it in my history.</Typography>
         <Stack direction="row" gap={1.5} alignItems="flex-start">
           {dictation.supported && (
             <IconButton
               aria-label={dictation.listening ? 'Stop recording' : 'Start recording'}
               onClick={dictation.listening ? dictation.stop : dictation.start}
-              sx={{ width: 64, height: 64, flex: 'none', bgcolor: dictation.listening ? 'rgba(239,68,68,0.2)' : 'rgba(96,165,250,0.18)', color: dictation.listening ? '#F87171' : '#93C5FD' }}
+              sx={{ width: 56, height: 56, flex: 'none', bgcolor: dictation.listening ? LEVELS.below.bg : C.light, color: dictation.listening ? LEVELS.below.color : C.blue }}
             >
               {dictation.listening ? <StopIcon fontSize="large" /> : <MicIcon fontSize="large" />}
             </IconButton>

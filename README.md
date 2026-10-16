@@ -111,7 +111,7 @@ The press speaks only on events (stored in `machines/{id}/soul`, translated into
 | `POST /api/machines/:id/analysis`, `POST /api/machines/:id/chat` | Gemini analysis and chat |
 | `GET /api/points` | Leaderboard for the current shift |
 | `GET /api/sensors` | Sensor catalog |
-| `PUT /api/machines/:id/simulation` | Simulator: `{ mode: normal\|better\|worse, inject: looseNode\|stick\|ioFault\|overheat }` |
+| `PUT /api/machines/:id/simulation` | Simulator: `{ mode: worse\|normal\|better }` for all factors, `{ factor: availability\|performance\|quality, level }` for one, or `{ inject: looseNode\|stick\|ioFault\|overheat\|breakdown }` |
 | `POST /api/machines/:id/nc` | Operator NC entry (Essential): `{ count, operatorId }` |
 | `POST /api/soul/verify` | Kiosk sign-in: `{ machineId, code }` |
 | `GET /api/machines/:id/soul?lang` | What the press said |

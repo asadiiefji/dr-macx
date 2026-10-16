@@ -2,16 +2,14 @@
 // anatomy of the problem part. Each event names its sensor and part; clicking one opens it full screen.
 import { useState } from 'react';
 import { Avatar, Box, Button, Chip, Dialog, DialogContent, IconButton, MenuItem, Stack, TextField, Typography } from '@mui/material';
-import { ThemeProvider } from '@mui/material/styles';
 import WarningIcon from '@mui/icons-material/WarningAmberRounded';
 import ErrorIcon from '@mui/icons-material/ReportRounded';
 import InfoIcon from '@mui/icons-material/InfoOutlined';
 import CheckIcon from '@mui/icons-material/CheckCircleOutline';
 import CloseIcon from '@mui/icons-material/Close';
-import ArrowIcon from '@mui/icons-material/ArrowForwardRounded';
 import ReplayIcon from '@mui/icons-material/ReplayOutlined';
 import MicIcon from '@mui/icons-material/GraphicEqRounded';
-import { theme as lightTheme } from '../theme.js';
+import { C } from '../theme.js';
 import { duration, num } from '../ui.jsx';
 import { StopForm } from '../StopConfirm.jsx';
 import { NcEntry, StateChip } from '../SensorTable.jsx';
@@ -23,10 +21,10 @@ import { BCP } from './useVoice.js';
 export const hhmm = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 
 export const SEV = {
-  error: { color: '#EF4444', bg: 'rgba(239,68,68,0.10)', line: 'rgba(239,68,68,0.45)', Icon: ErrorIcon, label: 'Needs action' },
-  warn: { color: '#F59E0B', bg: 'rgba(245,158,11,0.10)', line: 'rgba(245,158,11,0.45)', Icon: WarningIcon, label: 'Warning' },
-  info: { color: '#38BDF8', bg: 'rgba(56,189,248,0.08)', line: 'rgba(56,189,248,0.30)', Icon: InfoIcon, label: 'Info' },
-  ok: { color: '#22C55E', bg: 'rgba(34,197,94,0.08)', line: 'rgba(34,197,94,0.30)', Icon: CheckIcon, label: 'OK' },
+  error: { color: '#D32F2F', text: '#C62828', bg: '#FFEBEE', line: '#FFCDD2', Icon: ErrorIcon, label: 'Needs action' },
+  warn: { color: '#ED6C02', text: '#8A5300', bg: '#FFF8E1', line: '#FFE082', Icon: WarningIcon, label: 'Warning' },
+  info: { color: C.blue, text: C.blueDark, bg: C.light, line: '#BBDEFB', Icon: InfoIcon, label: 'Info' },
+  ok: { color: '#2E7D32', text: '#2E7D32', bg: '#E8F5E9', line: '#C8E6C9', Icon: CheckIcon, label: 'OK' },
 };
 
 const FILTERS = { all: 'All events', downtime: 'Downtime', sensor: 'Sensor alerts', question: 'Questions', production: 'Production', advice: 'Advice & reports' };
@@ -47,8 +45,8 @@ const partTags = (sensor, part, node) => [
   part && { label: node ? `${PART_NAMES[part] ?? part} · node ${node} (${NODE_PLACE[node]})` : PART_NAMES[part] ?? part, tone: 'part' },
 ].filter(Boolean);
 
-// One list of events: stops still waiting for a reason first (oldest first), then this shift's answered stops and
-// what the press said, newest first. A stop and the press's message about it are one event.
+// One list of events: questions the press asks the operator first, then stops still waiting for a reason (oldest
+// first), then this shift's answered stops and what the press said, newest first. A stop and the press's message about it are one event.
 export function buildEvents(messages, pending, done, sensors) {
   const said = (messages ?? []).filter((m) => KINDS[m.kind]);
   const stopMsg = new Map(said.filter((m) => m.kind === 'stop' && m.data?.stopId).map((m) => [m.data.stopId, m]));
@@ -96,7 +94,7 @@ export function buildEvents(messages, pending, done, sensors) {
       const sev = isAnomaly ? (m.data?.state === 'alarm' ? 'error' : 'warn') : k.sev;
       return {
         id: m.id, kind: m.kind, group: k.group, sev, at: m.at, message: m, part, node, sensor,
-        title: isAnomaly ? `${sensor?.node ? 'Tonnage' : sensor?.short ?? 'Sensor'} ${m.data?.state === 'alarm' ? 'alarm' : 'warning'}${sensor?.node ? ` on node ${sensor.node}` : ''}` : k.title,
+        title: m.needsAnswer && !m.answered ? 'Question for you' : isAnomaly ? `${sensor?.node ? 'Tonnage' : sensor?.short ?? 'Sensor'} ${m.data?.state === 'alarm' ? 'alarm' : 'warning'}${sensor?.node ? ` on node ${sensor.node}` : ''}` : k.title,
         text: m.text,
         needsAnswer: m.needsAnswer && !m.answered,
         tags: [
@@ -107,21 +105,29 @@ export function buildEvents(messages, pending, done, sensors) {
         ].filter(Boolean),
       };
     });
-  return [...waiting, ...[...answered, ...rest].sort((a, b) => b.at - a.at)];
+  // what the press asks the operator comes first, then stops waiting for a reason, then the rest by time
+  const asks = rest.filter((e) => e.needsAnswer);
+  return [...asks, ...waiting, ...[...answered, ...rest.filter((e) => !e.needsAnswer)].sort((a, b) => b.at - a.at)];
 }
 
 function Tag({ t }) {
   const c = SEV[t.tone];
-  const sx = c ? { bgcolor: c.bg, color: c.color, border: `1px solid ${c.line}` }
-    : t.tone === 'sensor' ? { bgcolor: 'rgba(59,130,246,0.15)', color: '#93C5FD' }
-      : t.tone === 'part' ? { bgcolor: 'rgba(250,204,21,0.12)', color: '#FDE68A' }
-        : { bgcolor: 'rgba(148,163,184,0.14)', color: 'text.secondary' };
-  return <Chip size="small" label={t.label} sx={{ height: 24, fontWeight: 600, ...sx }} />;
+  const sx = c ? { bgcolor: c.bg, color: c.text }
+    : t.tone === 'sensor' ? { bgcolor: C.light, color: C.blueDark }
+      : t.tone === 'part' ? { bgcolor: '#FFF3E0', color: '#B23C00' }
+        : { bgcolor: '#F1F5F9', color: C.muted };
+  return <Chip size="small" label={t.label} sx={{ height: 20, fontSize: 11, fontWeight: 600, maxWidth: '100%', ...sx }} />;
 }
 
+// Every event card has the same shape: status icon, title + time, a short description, chips, one action on the right.
 function EventCard({ e, onOpen, onAnatomy, onAnswer, dense }) {
   const s = SEV[e.sev];
   const stop = (fn) => (ev) => (ev.stopPropagation(), fn());
+  const action = e.stop ? { label: 'Confirm reason', color: 'error', variant: 'contained', run: () => onOpen(e) }
+    : e.needsAnswer ? { label: 'Answer', color: 'warning', variant: 'contained', icon: <MicIcon />, run: () => onAnswer(e.message) }
+      : e.part ? { label: 'View part', color: 'primary', variant: 'outlined', run: () => onAnatomy({ part: e.part, node: e.node ?? null }) }
+        : { label: 'Details', color: 'primary', variant: 'text', run: () => onOpen(e) };
+  const tags = dense ? e.tags.slice(0, 2) : e.tags;
   return (
     <Box
       role="button"
@@ -129,25 +135,28 @@ function EventCard({ e, onOpen, onAnatomy, onAnswer, dense }) {
       onClick={() => onOpen(e)}
       onKeyDown={(ev) => (ev.key === 'Enter' || ev.key === ' ') && (ev.preventDefault(), onOpen(e))}
       aria-label={`${s.label}: ${e.title} at ${hhmm(e.at)}. Open details.`}
-      sx={{ display: 'flex', gap: 1.5, p: 1.5, borderRadius: 3, bgcolor: s.bg, border: `1px solid ${s.line}`, cursor: 'pointer', '&:hover, &:focus-visible': { outline: `2px solid ${s.color}`, outlineOffset: 1 } }}
+      sx={{
+        p: 1.25, borderRadius: '8px', bgcolor: '#FFFFFF', border: `1px solid ${C.line}`, borderLeft: `3px solid ${s.color}`, cursor: 'pointer',
+        '&:hover': { bgcolor: '#F8FAFC' }, '&:focus-visible': { outline: `2px solid ${C.blue}`, outlineOffset: 1 },
+      }}
     >
-      <Avatar sx={{ bgcolor: s.color, width: 40, height: 40, color: '#0B1220' }}><s.Icon /></Avatar>
-      <Box flex={1} minWidth={0}>
-        <Stack direction="row" alignItems="baseline" gap={1}>
-          <Typography fontWeight={700} sx={{ flex: 1, minWidth: 0 }} noWrap>{e.title}</Typography>
-          <Typography variant="caption" color="text.secondary">{hhmm(e.at)}</Typography>
-        </Stack>
-        <Typography variant="body2" color="text.secondary" sx={dense ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : undefined}>
-          {e.text}
-        </Typography>
-        <Stack direction="row" gap={0.75} flexWrap="wrap" mt={1} alignItems="center">
-          {e.tags.map((t) => <Tag key={t.label} t={t} />)}
-          <Box flex={1} />
-          {e.part && <Button size="small" variant="outlined" color="inherit" endIcon={<ArrowIcon />} onClick={stop(() => onAnatomy({ part: e.part, node: e.node ?? null }))} sx={{ minHeight: 32 }}>View in anatomy</Button>}
-          {e.stop && <Button size="small" variant="contained" color="error" onClick={stop(() => onOpen(e))} sx={{ minHeight: 32 }}>Confirm reason</Button>}
-          {e.needsAnswer && <Button size="small" variant="contained" color="warning" startIcon={<MicIcon />} onClick={stop(() => onAnswer(e.message))} sx={{ minHeight: 32 }}>Answer by voice</Button>}
-        </Stack>
-      </Box>
+      <Stack direction="row" alignItems="center" gap={1}>
+        <s.Icon sx={{ color: s.color, fontSize: 18, flex: 'none' }} />
+        <Typography fontWeight={700} fontSize={13.5} sx={{ flex: 1, minWidth: 0 }} noWrap>{e.title}</Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ flex: 'none' }}>{hhmm(e.at)}</Typography>
+      </Stack>
+      <Typography
+        variant="body2" color="text.secondary" mt={0.25}
+        sx={{ fontSize: 13, lineHeight: 1.4, ...(dense && { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }) }}
+      >
+        {e.text}
+      </Typography>
+      <Stack direction="row" gap={0.5} alignItems="center" mt={0.75}>
+        <Stack direction="row" gap={0.5} flexWrap={dense ? 'nowrap' : 'wrap'} flex={1} minWidth={0} sx={{ overflow: 'hidden' }}>{tags.map((t) => <Tag key={t.label} t={t} />)}</Stack>
+        <Button size="small" variant={action.variant} color={action.color} startIcon={action.icon} onClick={stop(action.run)} sx={{ flex: 'none', minHeight: 28, py: 0, px: 1.25, fontSize: 12.5, borderRadius: '6px' }}>
+          {action.label}
+        </Button>
+      </Stack>
     </Box>
   );
 }
@@ -155,23 +164,19 @@ function EventCard({ e, onOpen, onAnatomy, onAnswer, dense }) {
 export function EventList({ events, filter, dense, ...handlers }) {
   const shown = events.filter((e) => filter === 'all' || e.group === filter);
   if (!shown.length) return <Typography color="text.secondary" sx={{ p: 1 }}>No {filter === 'all' ? '' : FILTERS[filter].toLowerCase() + ' '}events this shift. I speak when something changes.</Typography>;
-  return <Stack spacing={1.25}>{shown.map((e) => <EventCard key={e.id} e={e} dense={dense} {...handlers} />)}</Stack>;
+  return <Stack spacing={1}>{shown.map((e) => <EventCard key={e.id} e={e} dense={dense} {...handlers} />)}</Stack>;
 }
 
 export function EventFilter({ value, onChange }) {
   return (
-    <TextField select size="small" value={value} onChange={(e) => onChange(e.target.value)} aria-label="Filter events" sx={{ minWidth: 170 }}>
+    <TextField select size="small" value={value} onChange={(e) => onChange(e.target.value)} slotProps={{ htmlInput: { 'aria-label': 'Filter events' } }} sx={{ minWidth: 150, '& .MuiSelect-select': { py: 0.75, fontSize: 13.5 } }}>
       {Object.entries(FILTERS).map(([k, v]) => <MenuItem key={k} value={k}>{v}</MenuItem>)}
     </TextField>
   );
 }
 
-// A white card in the dark kiosk for parts built for the light app (anatomy drawing, stop form).
-export const LightIsland = ({ children, sx }) => (
-  <ThemeProvider theme={lightTheme}>
-    <Box sx={{ bgcolor: '#FFFFFF', color: 'text.primary', borderRadius: 3, p: 2, ...sx }}>{children}</Box>
-  </ThemeProvider>
-);
+// A bordered block inside a panel (stop form, anatomy).
+export const Framed = ({ children, sx }) => <Box sx={{ border: `1px solid ${C.line}`, borderRadius: '8px', p: 2, ...sx }}>{children}</Box>;
 
 export function FullScreen({ open, onClose, title, actions, children }) {
   return (
@@ -224,7 +229,7 @@ export function EventDetail({ e, row, sensors, reasons, operator, lang, onClose,
     <FullScreen
       open
       onClose={onClose}
-      title={<Stack direction="row" alignItems="center" gap={1.5}><Avatar sx={{ bgcolor: s.color, color: '#0B1220' }}><s.Icon /></Avatar>{e.title}</Stack>}
+      title={<Stack direction="row" alignItems="center" gap={1.5}><Avatar sx={{ bgcolor: s.bg, color: s.color }}><s.Icon /></Avatar>{e.title}</Stack>}
       actions={e.message && <Button startIcon={<ReplayIcon />} onClick={() => onReplay(e.message)}>Say it again</Button>}
     >
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' }, gap: 3 }}>
@@ -240,17 +245,17 @@ export function EventDetail({ e, row, sensors, reasons, operator, lang, onClose,
           <BeforeStop snap={d.sensorsBeforeStop} sensors={sensors} />
           {e.needsAnswer && <Button variant="contained" color="warning" size="large" startIcon={<MicIcon />} onClick={() => onAnswer(e.message)} sx={{ alignSelf: 'flex-start' }}>Answer by voice</Button>}
           {e.stop && (
-            <LightIsland>
+            <Framed>
               <Typography variant="h6" component="h3">Give this stop its reason</Typography>
               <Typography variant="body2" color="text.secondary" mb={1}>Let Gemini suggest one from your spoken note, or pick it yourself.</Typography>
               <StopForm machineId={row.id} event={e.stop} reasons={reasons} onSaved={() => (onSaved(), onClose())} operatorId={operator.id} lang={BCP[lang]} />
-            </LightIsland>
+            </Framed>
           )}
         </Stack>
         {(e.part || e.stop) && (
-          <LightIsland sx={{ p: 0, overflow: 'hidden' }}>
+          <Framed sx={{ p: 0, overflow: 'hidden' }}>
             <Anatomy m={row} lit={e.part ? { part: e.part, node: e.node ?? null } : undefined} title={e.part ? 'Where it is' : 'My anatomy'} height={520} />
-          </LightIsland>
+          </Framed>
         )}
       </Box>
     </FullScreen>
@@ -269,21 +274,21 @@ const showValue = (s, v, row) => {
 const limitText = (s, row) =>
   s.node ? `nominal ${Math.round(row.ratedTonnage / row.nodes)} t ± ${row.nodeTolerancePct}%` : s.warn != null ? `warn ${s.warn} · alarm ${s.alarm} ${s.unit}` : s.feeds ?? '';
 
-function Spark({ values, color }) {
+function Spark({ values, color, w = 72 }) {
   const v = values.filter((x) => typeof x === 'number');
-  if (v.length < 2) return <Box sx={{ width: 96 }} />;
+  if (v.length < 2) return <Box sx={{ width: w, flex: 'none' }} />;
   const lo = Math.min(...v);
   const hi = Math.max(...v);
-  const pts = v.map((x, i) => `${(i / (v.length - 1)) * 96},${22 - ((x - lo) / (hi - lo || 1)) * 20}`).join(' ');
-  return <svg width="96" height="24" aria-hidden><polyline points={pts} fill="none" stroke={color} strokeWidth="1.6" /></svg>;
+  const pts = v.map((x, i) => `${(i / (v.length - 1)) * w},${18 - ((x - lo) / (hi - lo || 1)) * 16}`).join(' ');
+  return <svg width={w} height="20" aria-hidden style={{ flex: 'none' }}><polyline points={pts} fill="none" stroke={color} strokeWidth="1.6" /></svg>;
 }
 
 export function SensorsTab({ row, sensors, log, operator, onPick }) {
   return (
-    <Stack spacing={1}>
+    <Stack spacing={0.75}>
       {sensors.map((s) => {
         const st = row.sensorStatus?.[s.id];
-        const color = st === 'alarm' ? SEV.error.color : st === 'warn' ? SEV.warn.color : '#38BDF8';
+        const color = st === 'alarm' ? SEV.error.color : st === 'warn' ? SEV.warn.color : C.blue;
         return (
           <Box
             key={s.id}
@@ -292,22 +297,24 @@ export function SensorsTab({ row, sensors, log, operator, onPick }) {
             onClick={() => onPick({ part: s.part, node: s.node ?? null })}
             onKeyDown={(ev) => ev.key === 'Enter' && onPick({ part: s.part, node: s.node ?? null })}
             aria-label={`${s.label}: ${showValue(s, valueOf(row.readings, s), row)}. Show on anatomy.`}
-            sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto', alignItems: 'center', gap: 1.5, p: 1.25, borderRadius: 2.5, border: 1, borderColor: st === 'alarm' || st === 'warn' ? SEV[st === 'alarm' ? 'error' : 'warn'].line : 'divider', cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }}
+            sx={{ p: 1, borderRadius: '8px', border: 1, borderColor: st === 'alarm' || st === 'warn' ? SEV[st === 'alarm' ? 'error' : 'warn'].line : C.line, borderLeft: `3px solid ${color}`, cursor: 'pointer', '&:hover': { bgcolor: '#F8FAFC' } }}
           >
-            <Box minWidth={0}>
-              <Typography fontWeight={700} noWrap>{s.short} <Typography component="span" variant="caption" color="text.secondary">· {PART_NAMES[s.part] ?? s.part}</Typography></Typography>
-              <Typography variant="caption" color="text.secondary" noWrap component="div">{limitText(s, row)}</Typography>
-            </Box>
-            <Spark values={log[s.id] ?? []} color={color} />
-            <Stack alignItems="flex-end" sx={{ minWidth: 112 }}>
-              <Typography fontWeight={700}>{showValue(s, valueOf(row.readings, s), row)}</Typography>
+            <Stack direction="row" alignItems="baseline" gap={1}>
+              <Typography fontWeight={700} fontSize={13.5} noWrap flex={1} minWidth={0}>
+                {s.short} <Typography component="span" variant="caption" color="text.secondary">· {PART_NAMES[s.part] ?? s.part}</Typography>
+              </Typography>
+              <Typography fontWeight={700} fontSize={13.5} noWrap>{showValue(s, valueOf(row.readings, s), row)}</Typography>
+            </Stack>
+            <Stack direction="row" alignItems="center" gap={1} mt={0.25}>
+              <Typography variant="caption" color="text.secondary" noWrap flex={1} minWidth={0}>{limitText(s, row)}</Typography>
+              <Spark values={log[s.id] ?? []} color={color} />
               <StateChip state={st} />
             </Stack>
           </Box>
         );
       })}
       {row.setup === 'essential' && (
-        <Box sx={{ p: 1.5, borderRadius: 2.5, border: 1, borderColor: 'divider' }}>
+        <Box sx={{ p: 1.25, borderRadius: '8px', border: 1, borderColor: C.line }}>
           <Typography fontWeight={700}>NC pieces</Typography>
           <Typography variant="body2" color="text.secondary" mb={1}>I have no camera. Log the non-conformance pieces you find so my Quality is right.</Typography>
           <NcEntry machineId={row.id} operatorId={operator.id} />
@@ -324,23 +331,23 @@ export function AnatomyTab({ row, sensors, lit, onClear, events, onOpen }) {
   const on = target ? sensors.filter((s) => (target.node ? s.node === target.node : s.part === target.part && !s.node)) : [];
   const related = target ? events.filter((e) => e.part === target.part && (!target.node || e.node === target.node)).slice(0, 3) : [];
   return (
-    <Stack spacing={1.5}>
-      <LightIsland sx={{ p: 0, overflow: 'hidden' }}>
-        <Anatomy m={row} lit={lit ?? undefined} title="My anatomy" height={340} />
-      </LightIsland>
+    <Stack spacing={1}>
+      <Framed sx={{ p: 0, overflow: 'hidden' }}>
+        <Anatomy m={row} lit={lit ?? undefined} title="My anatomy" height={300} />
+      </Framed>
       {lit && <Button size="small" onClick={onClear} sx={{ alignSelf: 'flex-start' }}>Back to my live problem part</Button>}
-      <Box sx={{ p: 1.5, borderRadius: 2.5, border: 1, borderColor: 'divider' }}>
+      <Box sx={{ p: 1.25, borderRadius: '8px', border: 1, borderColor: C.line }}>
         <Typography variant="overline" color="text.secondary">{lit ? 'Selected part' : 'Problem part'}</Typography>
         {!target ? (
           <Typography>All my parts are within limits. The drawing tours my sensors.</Typography>
         ) : (
           <>
-            <Typography variant="h6" component="h3">{PART_NAMES[target.part] ?? target.part}{target.node ? ` · node ${target.node} (${NODE_PLACE[target.node]})` : ''}</Typography>
+            <Typography fontWeight={700} component="h3">{PART_NAMES[target.part] ?? target.part}{target.node ? ` · node ${target.node} (${NODE_PLACE[target.node]})` : ''}</Typography>
             <Stack spacing={0.75} mt={1}>
               {on.map((s) => (
                 <Stack key={s.id} direction="row" alignItems="center" gap={1}>
-                  <Typography flex={1}>{s.label}</Typography>
-                  <Typography fontWeight={700}>{showValue(s, valueOf(row.readings, s), row)}</Typography>
+                  <Typography variant="body2" flex={1} minWidth={0}>{s.short}</Typography>
+                  <Typography variant="body2" fontWeight={700}>{showValue(s, valueOf(row.readings, s), row)}</Typography>
                   <StateChip state={row.sensorStatus?.[s.id]} />
                 </Stack>
               ))}
@@ -350,7 +357,7 @@ export function AnatomyTab({ row, sensors, lit, onClear, events, onOpen }) {
               <>
                 <Typography variant="overline" color="text.secondary" component="div" mt={1.5}>Recent events here</Typography>
                 {related.map((e) => (
-                  <Button key={e.id} color="inherit" onClick={() => onOpen(e)} sx={{ justifyContent: 'flex-start', textAlign: 'left', width: '100%' }}>
+                  <Button key={e.id} size="small" color="inherit" onClick={() => onOpen(e)} sx={{ justifyContent: 'flex-start', textAlign: 'left', width: '100%', minHeight: 32 }}>
                     {hhmm(e.at)} · {e.title}
                   </Button>
                 ))}

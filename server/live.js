@@ -2,7 +2,7 @@
 // turns them into OEE tags, records hourly OEE buckets and downtime events to Firestore, sends per-minute
 // sensor summaries to BigQuery, and serves the current-shift snapshot.
 import { currentShift, onBreak, breakIn, oee, add, ZERO, excludePlanned, schedulePlan } from './oee.js';
-import { newDummy, dummyStep, injectFault, MODES, INJECT } from './dummy.js';
+import { newDummy, dummyStep, injectFault, levelOf, MODES, INJECT, FACTORS } from './dummy.js';
 import { newRecorder, record } from './recorder.js';
 import { DEFAULT_TARGETS } from './validate.js';
 import { pressDefaults, toOeeTags, sensorsFor, judge, valueOf, motorState, ownReadings } from './sensors.js';
@@ -164,6 +164,7 @@ export function startLive(db) {
         motorFla: m.motorFla,
         idealCycleTime: m.idealCycleTime,
         sim: m.source === 'dummy' ? s?.gen.mode ?? 'normal' : null,
+        simLevels: m.source === 'dummy' && s ? simLevels(s.gen) : null, // per OEE factor: worse / normal / better
         pending: s?.pending.length ?? 0,
         pendingSince: s?.pending.length ? Math.min(...s.pending.map((e) => e.start)) : null,
         // the stop happening now, while it still waits for a reason
@@ -184,16 +185,23 @@ export function startLive(db) {
     };
   }
 
-  // Simulation for dummy machines: push OEE up or down live, or start a fault story now (demo).
-  // ponytail: in memory, resets on restart.
-  function simulate(id, mode, inject) {
+  // Simulation for dummy machines: push OEE up or down live (all factors, or one factor = { factor, level }),
+  // or start a fault story / a breakdown now (demo). ponytail: in memory, resets on restart.
+  function simulate(id, { mode, inject, factor, level } = {}) {
     const s = state.get(id);
     const m = machines.get(id);
     if (!s || m?.source !== 'dummy' || (mode && !MODES[mode]) || (inject && !INJECT.includes(inject))) return false;
-    if (mode) s.gen.mode = mode;
+    if (factor && (!FACTORS.includes(factor) || !MODES[level])) return false;
+    if (mode) Object.assign(s.gen, { mode, levels: null });
+    if (factor) {
+      s.gen.levels = { ...simLevels(s.gen), [factor]: level };
+      const all = new Set(Object.values(s.gen.levels));
+      s.gen.mode = all.size === 1 ? level : 'mixed';
+    }
     if (inject) injectFault(s.gen, pressDefaults(m), inject);
     return true;
   }
+  const simLevels = (gen) => Object.fromEntries(FACTORS.map((f) => [f, levelOf(gen, f)]));
 
   // Essential presses have no camera: the operator enters NC pieces, counted like a PLC counter.
   function addNc(id, count) {

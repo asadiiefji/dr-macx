@@ -250,10 +250,10 @@ app.post('/api/machines/:id/downtime/:eventId/suggest', async (req, res) => {
 // Simulation for a dummy machine: mode normal | better | worse, and/or inject a fault story
 // (looseNode | stick | ioFault | overheat) for a demo.
 app.put('/api/machines/:id/simulation', (req, res) => {
-  const { mode, inject } = req.body ?? {};
-  if ((!mode && !inject) || !live.simulate(req.params.id, mode, inject))
-    return res.status(400).json({ error: 'Simulation works only for an active dummy-generator machine: mode normal, better or worse; inject looseNode, stick, ioFault or overheat.' });
-  res.json({ mode, inject });
+  const { mode, inject, factor, level } = req.body ?? {};
+  if ((!mode && !inject && !factor) || !live.simulate(req.params.id, { mode, inject, factor, level }))
+    return res.status(400).json({ error: 'Simulation works only for an active dummy-generator machine: mode or level normal, better or worse (factor availability, performance or quality); inject looseNode, stick, ioFault, overheat or breakdown.' });
+  res.json({ mode, inject, factor, level });
 });
 
 // Operator-entered NC pieces (Essential presses have no vision camera).
