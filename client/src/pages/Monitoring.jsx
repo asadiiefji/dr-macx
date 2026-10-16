@@ -34,7 +34,9 @@ export default function Monitoring() {
 
 function Simulate({ m }) {
   const [error, setError] = useState('');
-  const set = (e, mode) => mode && api(`/machines/${m.id}/simulation`, { method: 'PUT', body: { mode } }).then(() => setError(''), (x) => setError(x.message));
+  const send = (body) => api(`/machines/${m.id}/simulation`, { method: 'PUT', body }).then(() => setError(''), (x) => setError(x.message));
+  const set = (e, mode) => mode && send({ mode });
+  const inject = (kind) => send({ inject: kind });
   return (
     <Box>
       <Typography variant="caption" color="text.secondary" component="div" mb={0.5}>Simulate OEE (dummy generator)</Typography>
@@ -43,10 +45,22 @@ function Simulate({ m }) {
         <ToggleButton value="normal" sx={{ '&.Mui-selected, &.Mui-selected:hover': { bgcolor: C.light, color: C.blueDark } }}>Normal</ToggleButton>
         <ToggleButton value="better" sx={{ '&.Mui-selected, &.Mui-selected:hover': { bgcolor: LEVELS.good.bg, color: LEVELS.good.color } }}><UpIcon fontSize="small" sx={{ mr: 0.5 }} />Better</ToggleButton>
       </ToggleButtonGroup>
+      {m.setup === 'premium' && (
+        <Box mt={1}>
+          <Typography variant="caption" color="text.secondary" component="div" mb={0.5}>Start a fault (the sensors will show it)</Typography>
+          <Stack direction="row" flexWrap="wrap" gap={0.75}>
+            {Object.entries(FAULTS).map(([k, label]) => (
+              <Button key={k} size="small" variant="outlined" onClick={() => inject(k)} sx={{ minHeight: 30, px: 1.25, fontSize: 12.5 }}>{label}</Button>
+            ))}
+          </Stack>
+        </Box>
+      )}
       {error && <Typography variant="caption" color="error">{error}</Typography>}
     </Box>
   );
 }
+
+const FAULTS = { looseNode: 'Loose node', stick: 'Sticking part', ioFault: 'Proximity sensor', overheat: 'Lube overheat' };
 
 function MachineCard({ m, now, onPending }) {
   const off = m.status === 'disconnected' || m.status === 'inactive';

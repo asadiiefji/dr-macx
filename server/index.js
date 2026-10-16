@@ -6,6 +6,7 @@ import { startLive } from './live.js';
 import { currentShift, groupBuckets, oee, add, ZERO, touchesBreak, excludePlanned, buildTimeline } from './oee.js';
 import { withReasons, markRepeats, downtimeStats, REPEAT, pointsFor } from './analysis.js';
 import { analyze, suggestReason, chat, explain, aiStatus, MODEL, GEMMA_MODEL } from './ai.js';
+import { SENSORS, SETUPS, FRAMES, CURRENT } from './sensors.js';
 
 const db = new Firestore({ ignoreUndefinedProperties: true });
 const live = startLive(db);
@@ -15,6 +16,9 @@ app.use(express.json({ limit: '100kb' }));
 const list = async (col) => (await db.collection(col).get()).docs.map((d) => ({ id: d.id, ...d.data() }));
 
 app.get('/api/live', (req, res) => res.json(live.snapshot()));
+
+// Stamping-press sensor catalog (Essential / Premium), shared with the client.
+app.get('/api/sensors', (req, res) => res.json({ setups: SETUPS, frames: FRAMES, current: CURRENT, sensors: SENSORS }));
 
 // Which Google AI models are active, how they are reached, and how their last call went (sidebar).
 app.get('/api/ai', (req, res) => res.json(aiStatus()));
@@ -217,6 +221,8 @@ app.post('/api/machines/:id/downtime/:eventId/suggest', async (req, res) => {
       machineCondition: now && {
         status: now.status,
         tags: now.tags,
+        sensors: now.readings,
+        sensorStatus: now.sensorStatus,
         shiftOeePct: now.oee == null ? null : Math.round(now.oee * 1000) / 10,
         shiftNgRatePct: now.total ? Math.round((now.ng / now.total) * 1000) / 10 : null,
       },
@@ -232,11 +238,27 @@ app.post('/api/machines/:id/downtime/:eventId/suggest', async (req, res) => {
   }
 });
 
-// Simulation for a dummy machine: mode normal | better | worse.
+// Simulation for a dummy machine: mode normal | better | worse, and/or inject a fault story
+// (looseNode | stick | ioFault | overheat) for a demo.
 app.put('/api/machines/:id/simulation', (req, res) => {
-  if (!live.simulate(req.params.id, req.body?.mode))
-    return res.status(400).json({ error: 'Simulation works only for an active dummy-generator machine, with mode normal, better or worse.' });
-  res.json({ mode: req.body.mode });
+  const { mode, inject } = req.body ?? {};
+  if ((!mode && !inject) || !live.simulate(req.params.id, mode, inject))
+    return res.status(400).json({ error: 'Simulation works only for an active dummy-generator machine: mode normal, better or worse; inject looseNode, stick, ioFault or overheat.' });
+  res.json({ mode, inject });
+});
+
+// Operator-entered NC pieces (Essential presses have no vision camera).
+app.post('/api/machines/:id/nc', async (req, res) => {
+  const count = Number(req.body?.count);
+  const operatorId = typeof req.body?.operatorId === 'string' ? req.body.operatorId.slice(0, 64) : null;
+  if (!Number.isInteger(count) || count < 1 || count > 10000) return res.status(400).json({ error: 'Enter a whole number of NC pieces (1–10000).' });
+  const ref = db.doc(`machines/${req.params.id}`);
+  const machine = await ref.get();
+  if (!machine.exists) return res.status(404).json({ error: 'Machine not found.' });
+  if (machine.data().setup === 'premium') return res.status(400).json({ error: 'This press counts NC with its vision camera.' });
+  if (!live.addNc(req.params.id, count)) return res.status(409).json({ error: 'The press is not being monitored yet. Try again in a few seconds.' });
+  await ref.collection('nc').add({ at: Date.now(), count, operatorId });
+  res.status(201).json({ count });
 });
 
 // The data Gemini reasons over for one machine and range (analysis and chat).
@@ -255,7 +277,15 @@ async function machineContext(r) {
       output: { total: sum.total, ng: sum.ng, plannedStopMin: Math.round(sum.plannedStopSec / 60) },
       // pieces the unplanned downtime cost at the ideal cycle time
       downtime: { ...stats, reasons: stats.reasons.map((x) => ({ ...x, lostPiecesAtIdealCt: x.type === 'planned' ? 0 : Math.round((x.minutes * 60) / ct) })) },
-      now: now && { status: now.status, tags: now.tags, shiftOeePct: now.oee == null ? null : Math.round(now.oee * 1000) / 10 },
+      now: now && {
+        status: now.status,
+        motor: now.motor,
+        tags: now.tags,
+        sensors: now.readings,
+        sensorStatus: now.sensorStatus, // ok / warn / alarm per sensor; tonnage nodes vs nominal ± tolerance
+        press: { setup: now.setup, frameType: now.frameType, ratedTonnage: now.ratedTonnage, nodes: now.nodes, nodeTolerancePct: now.nodeTolerancePct },
+        shiftOeePct: now.oee == null ? null : Math.round(now.oee * 1000) / 10,
+      },
       recentStops: events.slice(0, 15).map((e) => ({ at: new Date(e.start).toISOString(), min: Math.round(e.minutes * 10) / 10, reason: e.reason, type: e.type, confirmed: e.confirmed, repeated: e.repeated })),
       operatorComments: events.filter((e) => e.comment).slice(0, 30).map((e) => ({ reason: e.reason, at: new Date(e.start).toISOString(), comment: e.comment })),
     },

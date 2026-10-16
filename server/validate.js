@@ -1,4 +1,5 @@
 // Request-body validation for master data. Each parser returns { value } or { error }.
+import { FRAMES, SETUPS, pressDefaults, sensorsFor } from './sensors.js';
 
 export const ROLES = ['admin', 'supervisor', 'operator'];
 export const CATEGORIES = ['Breakdown', 'Changeover', 'Material', 'Minor stop', 'Quality', 'Operator break', 'Other'];
@@ -13,7 +14,6 @@ export const DEFAULT_TARGETS = {
   performance: { target: 95, margin: 5 },
   quality: { target: 99, margin: 1 },
 };
-export const TAG_KEYS = ['runStatus', 'totalCount', 'rejectCount', 'alarmCode'];
 // Kepware address: Channel.Device[.Group...].Tag
 const TAG_RE = /^[\w-]+(\.[\w-]+){2,}$/;
 const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -22,6 +22,14 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const str = (v, max = 120) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 
 function machine(b) {
+  const press = pressDefaults({
+    setup: b.setup,
+    frameType: b.frameType,
+    ratedTonnage: b.ratedTonnage,
+    nodes: b.nodes,
+    nodeTolerancePct: b.nodeTolerancePct,
+    motorFla: b.motorFla,
+  });
   const value = {
     code: str(b.code, 32).toUpperCase(),
     name: str(b.name),
@@ -35,7 +43,14 @@ function machine(b) {
       channel: str(b.kepware?.channel, 64),
       device: str(b.kepware?.device, 64),
     },
-    tags: Object.fromEntries(TAG_KEYS.map((k) => [k, str(b.tags?.[k], 200)])),
+    setup: press.setup,
+    frameType: press.frameType,
+    ratedTonnage: press.ratedTonnage,
+    nodes: press.nodes,
+    nodeTolerancePct: press.nodeTolerancePct,
+    motorFla: press.motorFla,
+    // one PLC tag (via Kepware) per sensor this press has
+    sensorTags: Object.fromEntries(sensorsFor(press).map((s) => [s.id, str(b.sensorTags?.[s.id], 200)])),
     targets: Object.fromEntries(
       FACTOR_KEYS.map((k) => [k, { target: Number(b.targets?.[k]?.target ?? DEFAULT_TARGETS[k].target), margin: Number(b.targets?.[k]?.margin ?? DEFAULT_TARGETS[k].margin) }]),
     ),
@@ -44,17 +59,23 @@ function machine(b) {
   if (!value.name) return { error: 'Machine name is required.' };
   if (!(value.idealCycleTime > 0 && value.idealCycleTime <= 86400))
     return { error: 'Ideal cycle time must be a number of seconds above 0.' };
+  if (!SETUPS.includes(b.setup ?? 'essential')) return { error: 'Sensor setup must be essential or premium.' };
+  if (!FRAMES.includes(b.frameType ?? 'c-frame')) return { error: 'Frame type must be c-frame or straight-side.' };
+  if (!(value.ratedTonnage >= 1 && value.ratedTonnage <= 5000)) return { error: 'Rated tonnage must be 1–5000 t.' };
+  if (!(value.nodeTolerancePct >= 0.5 && value.nodeTolerancePct <= 50)) return { error: 'Node tolerance must be 0.5–50 %.' };
+  if (!(value.motorFla >= 1 && value.motorFla <= 2000)) return { error: 'Motor full-load current must be 1–2000 A.' };
+  const tagIds = Object.keys(value.sensorTags);
   if (value.source === 'kepware') {
     if (!value.kepware.endpoint) return { error: 'Kepware endpoint is required for a PLC source.' };
-    if (TAG_KEYS.some((k) => !value.tags[k])) return { error: 'All four tag addresses are required for a PLC source.' };
+    if (tagIds.some((k) => !value.sensorTags[k])) return { error: 'Every sensor needs its PLC tag address for a Kepware source.' };
   }
   const badTarget = FACTOR_KEYS.find((k) => {
     const { target, margin } = value.targets[k];
     return !(target > 0 && target <= 100 && margin >= 0 && margin <= target);
   });
   if (badTarget) return { error: `${FACTOR_LABELS[badTarget]} target must be 1–100% and its tolerance between 0 and the target.` };
-  const bad = TAG_KEYS.find((k) => value.tags[k] && !TAG_RE.test(value.tags[k]));
-  if (bad) return { error: `Tag "${value.tags[bad]}" is not valid. Use Channel.Device.Tag format.` };
+  const bad = tagIds.find((k) => value.sensorTags[k] && !TAG_RE.test(value.sensorTags[k]));
+  if (bad) return { error: `Tag "${value.sensorTags[bad]}" is not valid. Use Channel.Device.Tag format.` };
   return { value };
 }
 

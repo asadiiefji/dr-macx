@@ -1,9 +1,13 @@
-// Live layer: reads each active machine's 4 tags every second (dummy generator now, Kepware later),
-// records hourly OEE buckets and downtime events to Firestore, and serves the current-shift snapshot.
+// Live layer: reads each active press's sensors every second (simulator now, PLC via Kepware later),
+// turns them into OEE tags, records hourly OEE buckets and downtime events to Firestore, sends per-minute
+// sensor summaries to BigQuery, and serves the current-shift snapshot.
 import { currentShift, onBreak, breakIn, oee, add, ZERO, excludePlanned, schedulePlan } from './oee.js';
-import { newDummy, dummyStep, MODES } from './dummy.js';
+import { newDummy, dummyStep, injectFault, MODES, INJECT } from './dummy.js';
 import { newRecorder, record } from './recorder.js';
 import { DEFAULT_TARGETS } from './validate.js';
+import { pressDefaults, toOeeTags, sensorsFor, judge, valueOf, motorState, ownReadings } from './sensors.js';
+import { minuteOf, newMinute, addReading, minuteRow } from './telemetry.js';
+import { insertRows, bqEnabled } from './bq.js';
 
 export const DEFAULT_SETTINGS = { breaks: [], breakToleranceMin: 5 };
 
@@ -52,7 +56,7 @@ export function startLive(db) {
   function ensure(m, now) {
     let s = state.get(m.id);
     if (!s) {
-      s = { gen: newDummy(), rec: newRecorder(), tags: null, status: null, since: now, ready: false, pending: [], recent: [] };
+      s = { gen: newDummy(), rec: newRecorder(), tags: null, readings: null, status: null, since: now, ready: false, pending: [], recent: [], manualNc: 0, agg: null, rows: [] };
       state.set(m.id, s);
       // Stops waiting for an operator to confirm the reason, kept live for the monitoring cards.
       s.unwatch = watch(db.collection(`machines/${m.id}/downtime`).where('confirmed', '==', false), (snap) => {
@@ -72,7 +76,8 @@ export function startLive(db) {
     const nextBreak = breakIn(now, settings.breaks);
     const hour = new Date(now).getHours();
     const shiftStart = currentShift(now).start;
-    for (const m of machines.values()) {
+    for (const raw of machines.values()) {
+      const m = pressDefaults(raw);
       const s = ensure(m, now);
       if (!s.ready) continue;
       // This shift's stops (from 12 h before, for stops that run into it): planned ones leave the live OEE.
@@ -84,7 +89,17 @@ export function startLive(db) {
         });
       }
       // ponytail: Kepware read not wired yet; a PLC-source machine reports "disconnected".
-      s.tags = m.active && m.source === 'dummy' ? dummyStep(s.gen, m, dt, { hour, onBreak: br, breakIn: nextBreak }) : null;
+      s.readings = m.active && m.source === 'dummy' ? dummyStep(s.gen, m, dt, { hour, onBreak: br, breakIn: nextBreak }) : null;
+      const prevReject = s.tags?.rejectCount;
+      s.tags = s.readings && toOeeTags(m, s.readings, s.manualNc);
+      if (s.readings) {
+        // per-minute sensor summary for BigQuery
+        const minute = minuteOf(now);
+        if (s.agg && s.agg.start !== minute) s.rows.push(minuteRow(s.agg, m, s.gen.mode));
+        if (!s.agg || s.agg.start !== minute) s.agg = newMinute(minute, m.nodes);
+        const ncDelta = prevReject === undefined ? 0 : Math.max(0, s.tags.rejectCount - prevReject);
+        addReading(s.agg, m, s.readings, dt, br, ncDelta);
+      }
       const status = !m.active ? 'inactive' : !s.tags ? 'disconnected' : s.tags.runStatus ? 'running' : br ? 'break' : 'stopped';
       if (status !== s.status) Object.assign(s, { status, since: now });
       if (!s.tags) continue;
@@ -97,15 +112,20 @@ export function startLive(db) {
   }, 1000);
 
   // Hour buckets are written once a minute (and on shutdown); older hours drop out of memory.
+  // Finished sensor minutes go to BigQuery in the same beat.
   function flush() {
     const keepFrom = currentShift().start;
     const writes = [];
+    const rows = [];
     for (const [id, s] of state) {
+      rows.push(...s.rows.splice(0));
       if (!s.ready) continue;
       for (const h of s.rec.dirty) writes.push(db.doc(`machines/${id}/hours/${h}`).set(s.rec.hours.get(h)).catch(logErr));
       s.rec.dirty.clear();
       for (const h of s.rec.hours.keys()) if (h < keepFrom) s.rec.hours.delete(h);
     }
+    // ponytail: a failed BigQuery insert drops that minute batch (logged); add a retry queue if gaps matter.
+    if (bqEnabled && rows.length) writes.push(insertRows(rows).catch((e) => console.error('bigquery insert failed:', e.message)));
     return Promise.all(writes);
   }
   setInterval(flush, 60_000);
@@ -113,7 +133,9 @@ export function startLive(db) {
   function snapshot() {
     const now = Date.now();
     const shift = currentShift(now);
-    const rows = [...machines.values()].map((m) => {
+    const br = onBreak(now, settings.breaks);
+    const rows = [...machines.values()].map((raw) => {
+      const m = pressDefaults(raw);
       const s = state.get(m.id);
       const hours = [...(s?.rec.hours.values() ?? [])].filter((b) => b.start >= shift.start);
       const sum = excludePlanned(hours, s?.recent ?? [], now).reduce(add, ZERO);
@@ -126,7 +148,18 @@ export function startLive(db) {
         source: m.source,
         status: s?.status ?? (m.active ? 'disconnected' : 'inactive'),
         since: s?.since ?? now,
-        tags: s?.tags ?? null,
+        tags: s?.tags ?? null, // OEE view of the sensors: run, count, NC, alarm
+        readings: ownReadings(m, s?.readings),
+        // ok / warn / alarm per sensor this press has
+        sensorStatus: s?.readings ? Object.fromEntries(sensorsFor(m).map((x) => [x.id, judge(m, x, valueOf(s.readings, x))])) : null,
+        motor: s?.readings ? (br ? 'break' : motorState(s.readings.motorCurrent, m.motorFla)) : null,
+        setup: m.setup,
+        frameType: m.frameType,
+        ratedTonnage: m.ratedTonnage,
+        nodes: m.nodes,
+        nodeTolerancePct: m.nodeTolerancePct,
+        motorFla: m.motorFla,
+        idealCycleTime: m.idealCycleTime,
         sim: m.source === 'dummy' ? s?.gen.mode ?? 'normal' : null,
         pending: s?.pending.length ?? 0,
         pendingSince: s?.pending.length ? Math.min(...s.pending.map((e) => e.start)) : null,
@@ -148,13 +181,24 @@ export function startLive(db) {
     };
   }
 
-  // Simulation for dummy machines: push OEE up or down live. ponytail: in memory, resets on restart.
-  function simulate(id, mode) {
+  // Simulation for dummy machines: push OEE up or down live, or start a fault story now (demo).
+  // ponytail: in memory, resets on restart.
+  function simulate(id, mode, inject) {
     const s = state.get(id);
-    if (!s || machines.get(id)?.source !== 'dummy' || !MODES[mode]) return false;
-    s.gen.mode = mode;
+    const m = machines.get(id);
+    if (!s || m?.source !== 'dummy' || (mode && !MODES[mode]) || (inject && !INJECT.includes(inject))) return false;
+    if (mode) s.gen.mode = mode;
+    if (inject) injectFault(s.gen, pressDefaults(m), inject);
     return true;
   }
 
-  return { snapshot, flush, simulate, settings: () => settings, pending: (id) => state.get(id)?.pending ?? [] };
+  // Essential presses have no camera: the operator enters NC pieces, counted like a PLC counter.
+  function addNc(id, count) {
+    const s = state.get(id);
+    if (!s) return false;
+    s.manualNc += count;
+    return true;
+  }
+
+  return { snapshot, flush, simulate, addNc, settings: () => settings, pending: (id) => state.get(id)?.pending ?? [] };
 }

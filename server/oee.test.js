@@ -89,12 +89,14 @@ test('downtime stats: Pareto, MTBF, trend, confirmed vs suggested reasons', () =
 test('simulation modes move OEE the right way', async () => {
   const { newDummy, dummyStep } = await import('./dummy.js');
   const { newRecorder, record } = await import('./recorder.js');
+  const { pressDefaults, toOeeTags } = await import('./sensors.js');
+  const m = pressDefaults({ idealCycleTime: 6, setup: 'premium', frameType: 'straight-side', ratedTonnage: 400 });
   const run = (mode) => {
     let seed = 7;
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
     const gen = { ...newDummy(), mode };
     const rec = newRecorder();
-    for (let t = at(8); t < at(14); t += 1000) record(rec, dummyStep(gen, { idealCycleTime: 6 }, 1, { rnd }), t, 1, 6, false);
+    for (let t = at(8); t < at(14); t += 1000) record(rec, toOeeTags(m, dummyStep(gen, m, 1, { rnd }), 0), t, 1, 6, false);
     return oee([...rec.hours.values()].reduce((a, b) => ({ ...a, ...Object.fromEntries(Object.keys(ZERO).map((k) => [k, a[k] + b[k]])) }), ZERO)).oee;
   };
   const [worse, normal, better] = ['worse', 'normal', 'better'].map(run);
@@ -162,4 +164,51 @@ test('AI calls retry a busy (429) answer twice, then give up', async () => {
   assert.equal(await track('gemma', async () => (++n < 3 ? Promise.reject(busy) : 'ok'), async (ms) => waits.push(ms)), 'ok');
   assert.deepEqual(waits, [1000, 3000]);
   await assert.rejects(track('gemma', async () => Promise.reject(busy), async () => {}), { status: 429 });
+});
+
+test('sensors: motor states, tonnage nodes, Essential vs Premium, OEE adapter', async () => {
+  const { motorState, sensorsFor, judge, nodeNominal, toOeeTags, pressDefaults } = await import('./sensors.js');
+  const premium = pressDefaults({ setup: 'premium', frameType: 'straight-side', ratedTonnage: 400 });
+  const essential = pressDefaults({ setup: 'essential', frameType: 'c-frame', ratedTonnage: 160 });
+  assert.deepEqual([premium.nodes, essential.nodes], [4, 2]);
+  assert.equal(sensorsFor(essential).length, 3); // laser eye, motor current, alarm word
+  assert.equal(sensorsFor(premium).filter((s) => s.node).length, 4);
+  // 400 t on 4 nodes = 100 t each; ±5 %: 104 ok, 110 out (your example)
+  assert.equal(nodeNominal(premium), 100);
+  const node = sensorsFor(premium).find((s) => s.node === 2);
+  assert.equal(judge(premium, node, 104), 'ok');
+  assert.equal(judge(premium, node, 110), 'alarm');
+  assert.equal(judge(premium, node, 106), 'warn');
+  // motor current: off < 1 A, idle < 30 % of full-load amps, else running
+  assert.deepEqual([0.4, 10, 40].map((a) => motorState(a, premium.motorFla)), ['off', 'idle', 'running']);
+  // NC: vision on Premium, operator entries on Essential
+  const r = { motorCurrent: 40, laserEye: 120, visionNc: 3, alarm: 0 };
+  assert.deepEqual(toOeeTags(premium, r, 9), { runStatus: 1, totalCount: 120, rejectCount: 3, alarmCode: 0 });
+  assert.equal(toOeeTags(essential, { ...r, motorCurrent: 20 }, 9).rejectCount, 9);
+});
+
+test('fault stories show up in the sensors', async () => {
+  const { newDummy, dummyStep, injectFault } = await import('./dummy.js');
+  const { pressDefaults } = await import('./sensors.js');
+  const m = pressDefaults({ idealCycleTime: 1, setup: 'premium', frameType: 'straight-side', ratedTonnage: 400 });
+  const gen = newDummy();
+  injectFault(gen, m, 'looseNode', () => 0); // node 1, target 1.09
+  let r;
+  for (let i = 0; i < 120; i++) r = dummyStep(gen, m, 1, { rnd: () => 0.5 });
+  assert.ok(r.tonnage[0] > 105 && r.tonnage[1] < 102, `loose node ${r.tonnage}`);
+  injectFault(gen, m, 'stick');
+  r = dummyStep(gen, m, 1, { rnd: () => 0.5 });
+  assert.ok(r.acoustic > 2, `stick score ${r.acoustic}`);
+});
+
+test('per-minute telemetry row for BigQuery', async () => {
+  const { newMinute, addReading, minuteRow } = await import('./telemetry.js');
+  const { pressDefaults } = await import('./sensors.js');
+  const m = pressDefaults({ id: 'p', code: 'P', setup: 'essential', ratedTonnage: 160 });
+  const a = newMinute(at(10), m.nodes);
+  const r = (amps, made) => ({ motorCurrent: amps, laserEye: 0, alarm: 0, tonnage: [80, 80], made, vibMotor: 2, vibGearbox: 2, tempMotor: 50, tempGearbox: 45, tempLube: 40, visionNc: 0, acoustic: 1, ioFaults: 0 });
+  for (let i = 0; i < 40; i++) addReading(a, m, r(25, 1), 1, false, 0);
+  for (let i = 0; i < 20; i++) addReading(a, m, r(4, 0), 1, false, i === 0 ? 2 : 0);
+  const row = minuteRow(a, m, 'normal');
+  assert.deepEqual([row.run_sec, row.idle_sec, row.parts, row.nc, row.tonnage_avg.length, row.vib_motor], [40, 20, 40, 2, 0, null]);
 });

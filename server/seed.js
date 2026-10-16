@@ -6,17 +6,23 @@ import { schemas, parseSettings, DEFAULT_TARGETS } from './validate.js';
 import { currentShift, dayStart, onBreak, breakIn } from './oee.js';
 import { newDummy, dummyStep } from './dummy.js';
 import { newRecorder, record } from './recorder.js';
+import { defaultTags, pressDefaults, toOeeTags } from './sensors.js';
+import { minuteOf, newMinute, addReading, minuteRow } from './telemetry.js';
+import { bqEnabled, insertRows, query } from './bq.js';
 
+// Two stamping presses: one with the Premium sensor set, one with the low-cost Essential set.
+const press = (m) => ({ ...m, sensorTags: defaultTags(pressDefaults(m), 'Channel1', m.kepware.device), targets: DEFAULT_TARGETS });
 const machines = {
-  'prs-03': {
-    code: 'PRS-03', name: 'Press 03 · 200T', line: 'Line 2', area: 'Stamping', idealCycleTime: 6, source: 'dummy',
+  'prs-03': press({
+    code: 'PRS-03', name: 'Press 03 · 400T straight-side', line: 'Line 2', area: 'Stamping', idealCycleTime: 6, source: 'dummy',
+    setup: 'premium', frameType: 'straight-side', ratedTonnage: 400, nodes: 4, nodeTolerancePct: 5,
     kepware: { endpoint: 'opc.tcp://192.168.1.10:49320', channel: 'Channel1', device: 'Press03' },
-    tags: {
-      runStatus: 'Channel1.Press03.RunStatus', totalCount: 'Channel1.Press03.TotalCount',
-      rejectCount: 'Channel1.Press03.RejectCount', alarmCode: 'Channel1.Press03.AlarmCode',
-    },
-    targets: DEFAULT_TARGETS,
-  },
+  }),
+  'prs-05': press({
+    code: 'PRS-05', name: 'Press 05 · JH21-160 C-frame', line: 'Line 3', area: 'Stamping', idealCycleTime: 2.5, source: 'dummy',
+    setup: 'essential', frameType: 'c-frame', ratedTonnage: 160, nodes: 2, nodeTolerancePct: 5,
+    kepware: { endpoint: 'opc.tcp://192.168.1.11:49320', channel: 'Channel1', device: 'Press05' },
+  }),
 };
 
 const operators = {
@@ -26,8 +32,11 @@ const operators = {
   'op-004': { code: 'OP-004', name: 'Maria Santos' },
 };
 
-// operator -> level on PRS-03 (0 None, 1 Trainee, 2 Can run, 3 Can teach)
-const skills = { 'op-001': 3, 'op-002': 2, 'op-003': 1 };
+// machine -> operator -> level (0 None, 1 Trainee, 2 Can run, 3 Can teach)
+const skills = {
+  'prs-03': { 'op-001': 3, 'op-002': 2, 'op-003': 1 },
+  'prs-05': { 'op-003': 3, 'op-004': 2, 'op-001': 1 },
+};
 
 const users = {
   'usr-admin': { name: 'Asadi', email: 'admin@drmacx.demo', role: 'admin' },
@@ -101,21 +110,33 @@ const mulberry32 = (a) => () => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 
-// Runs the same dummy PLC + recorder as the live server, second by second, up to the current shift.
-function simulate(id, m) {
+// Runs the same sensor simulator + recorder as the live server, second by second, up to the current shift.
+// Also builds the per-minute sensor rows for BigQuery.
+function simulate(id, raw) {
+  const m = pressDefaults({ ...raw, id });
   const end = currentShift().start;
   const start = dayStart(end - 30 * 86400e3);
-  const rnd = mulberry32(42);
+  const rnd = mulberry32(id === 'prs-03' ? 42 : 7);
   const gen = newDummy();
   const rec = newRecorder();
   const events = [];
+  const rows = [];
+  let agg = null;
+  let lastNc = 0;
   for (let t = start; t < end; t += 1000) {
     const br = onBreak(t, settings.breaks);
-    // pump wear grows over the month, so hydraulic stops become more frequent
-    const tags = dummyStep(gen, m, 1, { rnd, wear: (t - start) / (end - start), hour: new Date(t).getHours(), onBreak: br, breakIn: breakIn(t, settings.breaks) });
+    // pump wear grows over the month, so hydraulic stops, vibration and temperatures rise
+    const r = dummyStep(gen, m, 1, { rnd, wear: (t - start) / (end - start), hour: new Date(t).getHours(), onBreak: br, breakIn: breakIn(t, settings.breaks) });
+    // Essential presses: the operators logged the NC pieces they found, as if entered on the kiosk
+    const tags = toOeeTags(m, r, gen.ng);
     const { opened, closed } = record(rec, tags, t, 1, m.idealCycleTime, br);
     if (opened) opened.reasonCode = gen.reason; // the operator's answer, as if they had confirmed it
     if (closed) events.push(closed);
+    const minute = minuteOf(t);
+    if (agg && agg.start !== minute) rows.push(minuteRow(agg, m, 'normal'));
+    if (!agg || agg.start !== minute) agg = newMinute(minute, m.nodes);
+    addReading(agg, m, r, 1, br, tags.rejectCount - lastNc);
+    lastNc = tags.rejectCount;
   }
   if (rec.open) events.push({ ...rec.open, end, durationSec: (end - rec.open.start) / 1000 });
 
@@ -130,7 +151,7 @@ function simulate(id, m) {
     const planned = reasons.find((r) => r.code === e.reasonCode)?.type === 'planned';
     writes.push([`machines/${id}/downtime/${e.start}`, { ...e, confirmed: true, planned, ...(comment && { comment }) }]);
   });
-  return { writes, hours: rec.hours.size, events: events.length };
+  return { writes, rows, hours: rec.hours.size, events: events.length };
 }
 
 const writes = [];
@@ -142,18 +163,29 @@ for (const [col, docs] of Object.entries({ machines, operators, users, reasons: 
     writes.push([`${col}/${id}`, { ...value, updatedAt: Date.now() }]);
   }
 }
-for (const [operatorId, level] of Object.entries(skills)) {
-  writes.push([`skills/${operatorId}__prs-03`, { operatorId, machineId: 'prs-03', level }]);
+for (const [machineId, levels] of Object.entries(skills)) {
+  for (const [operatorId, level] of Object.entries(levels)) {
+    writes.push([`skills/${operatorId}__${machineId}`, { operatorId, machineId, level }]);
+  }
 }
 writes.push(['settings/oee', parseSettings(settings).value]);
 await commit(writes);
-console.log(`Seeded 1 machine, 4 operators, 3 skills, 3 users, ${reasons.length} downtime reasons and planned breaks.`);
+console.log(`Seeded ${Object.keys(machines).length} presses, 4 operators, skills, 3 users, ${reasons.length} downtime reasons and planned breaks.`);
 
 for (const [id, m] of Object.entries(machines)) {
+  // never overwrite recorded history: Firestore and BigQuery are each filled only when empty for this press
   const past = db.collection(`machines/${id}/hours`).where('start', '<', currentShift().start).limit(1);
-  if (!(await past.get()).empty) continue; // never overwrite recorded history
+  const needFirestore = (await past.get()).empty;
+  const needBq = bqEnabled && Number((await query('SELECT COUNT(*) AS n FROM `T` WHERE machine_id = @id', { id }))[0].n) === 0;
+  if (!needFirestore && !needBq) continue;
   const sim = simulate(id, m);
-  await commit(sim.writes);
-  console.log(`Backfilled ${m.code}: ${sim.hours} hours, ${sim.events} downtime events.`);
+  if (needFirestore) {
+    await commit(sim.writes);
+    console.log(`Backfilled ${m.code}: ${sim.hours} hours, ${sim.events} downtime events.`);
+  }
+  if (needBq) {
+    await insertRows(sim.rows);
+    console.log(`BigQuery: ${sim.rows.length} sensor minutes for ${m.code}.`);
+  }
 }
 process.exit(0);

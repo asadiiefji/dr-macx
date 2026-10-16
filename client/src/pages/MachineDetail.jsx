@@ -8,7 +8,8 @@ import { useCollection, useLive } from '../api.js';
 import { PageHeader, StatusChip, Mono, num, duration } from '../ui.jsx';
 import { MONO } from '../theme.js';
 import { ShiftLine, KpiRow } from './Dashboard.jsx';
-import { TAGS } from './Machines.jsx';
+import SensorTable, { NcEntry } from '../SensorTable.jsx';
+import { SETUP_TEXT } from '../sensors.js';
 import History from './History.jsx';
 import Downtime from './Downtime.jsx';
 
@@ -102,31 +103,24 @@ function LiveTab({ m, master, live }) {
     <Stack spacing={2}>
       <KpiRow values={m} targets={m.targets} overline="THIS SHIFT" />
       <Grid container spacing={2}>
-        <Grid size={{ xs: 12, md: 7 }}>
+        <Grid size={{ xs: 12, lg: 8 }}>
           <Card sx={{ height: '100%' }}>
             <CardContent>
-              <Typography variant="h6" component="h2">Live tag values</Typography>
+              <Typography variant="h6" component="h2">Sensors · {SETUP_TEXT[m.setup]?.label} setup</Typography>
               <Typography variant="body2" color="text.secondary" mb={1}>
-                Source: {m.source === 'dummy' ? 'Dummy generator (PLC-like values every 1 s)' : 'Kepware (PLC)'}
+                {m.ratedTonnage} t {m.frameType}, {m.nodes} tonnage nodes · {m.source === 'dummy' ? 'Simulated sensors (as the PLC would send them, every 1 s)' : 'Sensors via PLC / Kepware'}
               </Typography>
-              <Box sx={{ overflowX: 'auto' }}>
-                <Table size="small">
-                  <TableHead><TableRow><TableCell>Signal</TableCell><TableCell>Tag address</TableCell><TableCell align="right">Value</TableCell></TableRow></TableHead>
-                  <TableBody>
-                    {TAGS.map((t) => (
-                      <TableRow key={t.key}>
-                        <TableCell>{t.label}</TableCell>
-                        <TableCell><Mono>{master?.tags?.[t.key] || '—'}</Mono></TableCell>
-                        <TableCell align="right"><Mono fontWeight={600}>{m.tags ? num(m.tags[t.key]) : '—'}</Mono></TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </Box>
+              <SensorTable m={m} master={master} />
+              {m.setup === 'essential' && (
+                <Box mt={2}>
+                  <Typography variant="body2" color="text.secondary" mb={1}>No vision camera on this press: log the NC pieces you find so Quality is right.</Typography>
+                  <NcEntry machineId={m.id} />
+                </Box>
+              )}
             </CardContent>
           </Card>
         </Grid>
-        <Grid size={{ xs: 12, md: 5 }}>
+        <Grid size={{ xs: 12, lg: 4 }}>
           <Card sx={{ height: '100%' }}>
             <CardContent>
               <Typography variant="h6" component="h2" mb={2}>This shift</Typography>
