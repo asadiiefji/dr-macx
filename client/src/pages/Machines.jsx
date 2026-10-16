@@ -46,6 +46,7 @@ export default function Machines() {
         <Button variant="contained" color="secondary" startIcon={<AddIcon />} onClick={() => setEdit(BLANK)}>Add machine</Button>
       </PageHeader>
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {rows.filter((m) => m.cycleSuggestion?.status === 'pending').map((m) => <CycleSuggestion key={m.id} m={m} onDone={reload} />)}
       <TableContainer component={Card}>
         <Table sx={{ minWidth: 760 }}>
           <TableHead>
@@ -90,6 +91,58 @@ export default function Machines() {
         />
       )}
     </>
+  );
+}
+
+// The press learned a different best cycle time from its sensors; a supervisor decides.
+function CycleSuggestion({ m, onDone }) {
+  const s = m.cycleSuggestion;
+  const decide = (approve) => api(`/machines/${m.id}/cycle-time`, { method: 'POST', body: { approve } }).then(onDone, (e) => alert(e.message));
+  return (
+    <Alert
+      severity="info"
+      sx={{ mb: 2 }}
+      action={
+        <Stack direction="row" spacing={1}>
+          <Button color="inherit" size="small" onClick={() => decide(false)}>Reject</Button>
+          <Button variant="contained" size="small" onClick={() => decide(true)}>Approve {s.to} s</Button>
+        </Stack>
+      }
+    >
+      <b>{m.code}</b>: its best steady stroke over the last 3 shifts was <b>{s.to} s</b> per piece, but the ideal cycle time is <b>{s.from} s</b>.
+      Approving changes the ideal cycle time used for Performance. <Typography component="span" variant="caption" color="text.secondary">({s.samples} stable samples from {s.source})</Typography>
+    </Alert>
+  );
+}
+
+// On-demand check of the ideal cycle time against the stroke history.
+function CycleCheck({ id }) {
+  const [out, setOut] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const check = async () => {
+    setBusy(true);
+    try {
+      const r = await api(`/machines/${id}/cycle-time/learn`, { method: 'POST' });
+      const p = r.suggestion ?? r.pending;
+      setOut({
+        severity: p ? 'info' : 'success',
+        text: !r.best
+          ? 'Not enough steady running in the last 3 shifts to learn from yet.'
+          : p
+            ? `Best steady stroke: ${r.best.seconds} s per piece. A suggestion to change ${p.from} s → ${p.to} s waits for approval on the Machines page.`
+            : `Best steady stroke: ${r.best.seconds} s per piece, within 5 % of the ideal cycle time (or recently rejected). No change needed.`,
+      });
+    } catch (e) {
+      setOut({ severity: 'error', text: e.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Stack spacing={1} alignItems="flex-start">
+      <Button variant="outlined" size="small" onClick={check} disabled={busy}>{busy ? 'Checking…' : 'Check against the sensors'}</Button>
+      {out && <Alert severity={out.severity} sx={{ width: '100%' }}>{out.text}</Alert>}
+    </Stack>
   );
 }
 
@@ -164,6 +217,7 @@ function MachineDialog({ machine, operators, skills, onClose, onSaved }) {
                 slotProps={{ htmlInput: { min: 0.1, step: 0.1 } }}
                 sx={{ maxWidth: 360 }}
               />
+              {m.id && <CycleCheck id={m.id} />}
               <Box>
                 <Typography fontWeight={700}>Targets and tolerance</Typography>
                 <Typography variant="body2" color="text.secondary" mb={1.5}>

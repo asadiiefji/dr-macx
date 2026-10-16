@@ -13,6 +13,7 @@ import { SETUP_TEXT } from '../sensors.js';
 import History from './History.jsx';
 import Anatomy from '../anatomy/Anatomy.jsx';
 import Downtime from './Downtime.jsx';
+import Handovers from '../Handovers.jsx';
 
 const DAY = 86400e3;
 const dateInput = (t) => {
@@ -65,6 +66,7 @@ export default function MachineDetail() {
         <Tab label="OEE history" />
         <Tab label="Downtime & AI analysis" />
         <Tab label="Anatomy" />
+        <Tab label="Shift handovers" />
       </Tabs>
 
       {tab > 0 && tab < 3 && (
@@ -96,6 +98,7 @@ export default function MachineDetail() {
       {tab === 0 && <LiveTab m={m} master={master} live={live} />}
       {tab === 1 && !badRange && <History id={id} range={range} onShift={(shift) => setF({ ...f, shift })} />}
       {tab === 3 && <Anatomy m={m} title={`${m.code} anatomy`} height={560} />}
+      {tab === 4 && <Handovers machineId={id} limit={20} />}
       {tab === 2 && !badRange && <Downtime id={id} code={m.code} range={range} />}
     </>
   );

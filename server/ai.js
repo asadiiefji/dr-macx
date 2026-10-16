@@ -279,3 +279,29 @@ export async function translateTexts(texts, lang) {
   const out = JSON.parse(res.text);
   return out.length === texts.length ? out : texts;
 }
+
+const HANDOVER_SCHEMA = {
+  type: 'object',
+  properties: {
+    summary: { type: 'string', description: 'The finished shift in 2-3 sentences for the history (English): OEE vs target, output vs plan, the biggest losses.' },
+    highlights: { type: 'array', items: { type: 'string' }, description: 'What the next shift must know (max 4): open stops, anomalies, unanswered questions, repeats.' },
+    advice: { type: 'array', items: { type: 'string' }, description: 'Concrete advice for the next shift (max 3).' },
+    say: { type: 'string', description: 'What I, the press, say aloud to the incoming shift: 3-4 short sentences, first person, plain text.' },
+  },
+  required: ['summary', 'highlights', 'advice', 'say'],
+};
+
+// Shift handover: summarise the finished shift and advise the next one (stored in English, translated on the kiosk).
+export async function handoverSummary(facts) {
+  const res = await track('gemini', () => gemini().models.generateContent({
+    model: MODEL,
+    contents: JSON.stringify(facts),
+    config: {
+      systemInstruction: `${soulVoice('en')}\nThe shift in "shift" has just ended. Hand over to the incoming shift: how the shift went, what is still open and what to watch.`,
+      responseMimeType: 'application/json',
+      responseJsonSchema: HANDOVER_SCHEMA,
+      temperature: 0.3,
+    },
+  }));
+  return JSON.parse(res.text);
+}

@@ -244,3 +244,17 @@ test('soul: target risk, hourly surprise and sensor anomalies', async () => {
   assert.equal(anomalies({ ...press, sensorStatus: status }, mem, 100e3).length, 0);
   assert.equal(mem.since.tonnage4, undefined); // back to ok resets the hold
 });
+
+test('cycle time learner: fastest stable 10 %, suggest when > 5 % off', async () => {
+  const { bestCycleTime, suggestCycle } = await import('./cycle.js');
+  // 100 full running minutes at 8.0 s/part, 10 at 7.0 s/part, plus partial minutes that must be ignored
+  const mins = [...Array(100).fill({ runSec: 60, parts: 7.5 }), ...Array(10).fill({ runSec: 60, parts: 60 / 7 }), { runSec: 20, parts: 10 }, { runSec: 60, parts: 0 }];
+  const best = bestCycleTime(mins, 60, 60);
+  assert.deepEqual(best, { seconds: 7.1, samples: 110 }); // fastest 11 = ten at 7.0 + one at 8.0
+  assert.equal(bestCycleTime(mins.slice(0, 10), 60, 60), null); // too few samples
+  assert.equal(suggestCycle({ idealCycleTime: 7 }, best, 0), null); // within 5 %
+  assert.deepEqual(suggestCycle({ idealCycleTime: 6 }, best, 0), { from: 6, to: 7.1, samples: 110, at: 0, status: 'pending' });
+  assert.equal(suggestCycle({ idealCycleTime: 6, cycleSuggestion: { status: 'pending' } }, best, 0), null);
+  assert.equal(suggestCycle({ idealCycleTime: 6, cycleSuggestion: { status: 'rejected', at: 0 } }, best, 86400e3), null); // rejected yesterday
+  assert.ok(suggestCycle({ idealCycleTime: 6, cycleSuggestion: { status: 'rejected', at: 0 } }, best, 8 * 86400e3)); // a week later: again
+});

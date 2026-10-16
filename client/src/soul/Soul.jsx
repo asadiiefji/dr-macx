@@ -2,7 +2,7 @@
 // then the press speaks for itself (3D character + voice), shows its schedule, events and downtime.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Box, Button, Card, CardActionArea, CardContent, Chip, CircularProgress, Divider, Grid, IconButton,
+  Alert, Box, Button, Card, CardActionArea, CardContent, Chip, CircularProgress, Dialog, DialogContent, DialogTitle, Divider, Grid, IconButton,
   LinearProgress, MenuItem, Stack, TextField, Tooltip, Typography, useMediaQuery,
 } from '@mui/material';
 import VolumeUpIcon from '@mui/icons-material/VolumeUpOutlined';
@@ -23,6 +23,8 @@ import PressCharacter, { EMOTIONS } from './PressCharacter.jsx';
 import { BCP, useVoice } from './useVoice.js';
 import Anatomy from '../anatomy/Anatomy.jsx';
 import BuildIcon from '@mui/icons-material/PrecisionManufacturingOutlined';
+import HandoverIcon from '@mui/icons-material/HistoryEduOutlined';
+import Handovers from '../Handovers.jsx';
 
 const SESSION = 'drmacx.soul';
 const load = () => {
@@ -145,6 +147,7 @@ function usePoll(path, ms) {
 // --- The main kiosk screen ---
 function Main({ session, onChange, onExit }) {
   const { machineId, operator, lang, voice: voiceOn } = session;
+  const [handovers, setHandovers] = useState(false);
   const { live } = useLive();
   const languages = useGet('/languages').data ?? { en: 'English' };
   const messages = usePoll(`/machines/${machineId}/soul?lang=${lang}`, 4000);
@@ -216,6 +219,13 @@ function Main({ session, onChange, onExit }) {
                         <BuildIcon />
                       </IconButton>
                     </Tooltip>
+                    <Tooltip title="Shift handovers">
+                      <IconButton aria-label="Shift handovers" onClick={() => setHandovers(true)} sx={{ border: `1px solid ${C.line}` }}><HandoverIcon /></IconButton>
+                    </Tooltip>
+                    <Dialog open={handovers} onClose={() => setHandovers(false)} fullWidth maxWidth="md">
+                      <DialogTitle>Shift handovers</DialogTitle>
+                      <DialogContent>{handovers && <Handovers machineId={machineId} />}</DialogContent>
+                    </Dialog>
                     <Tooltip title="Sign out / change press">
                       <IconButton aria-label="Sign out" onClick={onExit} sx={{ border: `1px solid ${C.line}` }}><LogoutIcon /></IconButton>
                     </Tooltip>
@@ -284,7 +294,7 @@ function Main({ session, onChange, onExit }) {
   );
 }
 
-const KIND = { advice: 'Advice', report: 'Report', operator: 'You said', stop: 'Stop', risk: 'Target risk', surprise: 'Question', anomaly: 'Sensor alert', cycleTime: 'Cycle time', handover: 'Handover', info: 'Info' };
+const KIND = { advice: 'Advice', report: 'Report', operator: 'You said', stop: 'Stop', risk: 'Target risk', question: 'Question', anomaly: 'Sensor alert', cycle: 'Cycle time', handover: 'Handover', info: 'Info' };
 
 function SaidList({ messages, onReplay, onShow }) {
   return (

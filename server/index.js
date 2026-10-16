@@ -9,6 +9,8 @@ import { analyze, suggestReason, chat, explain, aiStatus, MODEL, GEMMA_MODEL } f
 import { SENSORS, SETUPS, FRAMES, CURRENT } from './sensors.js';
 import { soulRoutes } from './soul.js';
 import { startBrain } from './brain.js';
+import { cycleRoutes } from './cycle.js';
+import { handoverRoutes } from './handover.js';
 import { LANGUAGES } from './ai.js';
 
 const db = new Firestore({ ignoreUndefinedProperties: true });
@@ -63,10 +65,14 @@ async function machineRange(req, res) {
   const ref = db.doc(`machines/${req.params.id}`);
   const machine = await ref.get();
   if (!machine.exists) return res.status(404).json({ error: 'Machine not found.' }), null;
-  const keep = (t) => !shift || currentShift(t).name === shift;
-  const between = (col) => ref.collection(col).where('start', '>=', from).where('start', '<', to).get();
-  return { ref, machine: { id: machine.id, ...machine.data() }, from, to, shift, keep, between };
+  return { ...rangeFor(ref, from, to, (t) => !shift || currentShift(t).name === shift), machine: { id: machine.id, ...machine.data() }, shift };
 }
+
+// A stretch of one machine's history; keep(t) narrows it (e.g. to one shift name).
+const rangeFor = (ref, from, to, keep = () => true) => ({
+  ref, from, to, keep,
+  between: (col) => ref.collection(col).where('start', '>=', from).where('start', '<', to).get(),
+});
 
 const hoursIn = async (r) => (await r.between('hours')).docs.map((d) => d.data()).filter((b) => r.keep(b.start));
 
@@ -324,6 +330,8 @@ app.post('/api/machines/:id/chat', async (req, res) => {
 app.get('/api/languages', (req, res) => res.json(LANGUAGES));
 const soul = soulRoutes(app, { db, live, list, resolve, eventsSince, repeatWindowMs: REPEAT.windowMs });
 startBrain({ db, live, say: soul.say, context: soul.context, resolve });
+cycleRoutes(app, { db, live, say: soul.say });
+handoverRoutes(app, { db, live, say: soul.say, shiftData: (id, sh) => rangeData(rangeFor(db.doc(`machines/${id}`), sh.start, sh.end)) });
 
 // --- Master data CRUD: machines, operators, users, reasons ---
 app.use('/api/:col', (req, res, next) => (schemas[req.params.col] ? next() : res.status(404).json({ error: 'Not found.' })));
@@ -342,8 +350,10 @@ async function save(req, res, id) {
     const dup = await db.collection(col).where(key, '==', value[key]).get();
     if (dup.docs.some((d) => d.id !== ref.id)) return res.status(409).json({ error: `${label} "${value[key]}" already exists.` });
   }
-  if (id && !(await ref.get()).exists) return res.status(404).json({ error: 'Not found.' });
-  await ref.set({ ...value, updatedAt: Date.now() });
+  const old = id ? (await ref.get()).data() : null;
+  if (id && !old) return res.status(404).json({ error: 'Not found.' });
+  // a learned cycle-time suggestion is not part of the form, so it survives edits
+  await ref.set({ ...value, ...(old?.cycleSuggestion && { cycleSuggestion: old.cycleSuggestion }), updatedAt: Date.now() });
   res.status(id ? 200 : 201).json({ id: ref.id, ...value });
 }
 
