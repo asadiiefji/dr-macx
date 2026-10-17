@@ -1,6 +1,6 @@
 // Machine Soul: the kiosk screen next to a press. Pick the press, sign in with an employee number, then a full-screen
 // dashboard: the press speaks for itself (3D character + voice), shows OEE, schedule vs actual, events, sensors and anatomy.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link as RouterLink } from 'react-router';
 import {
   Alert, Box, Button, Card, CardActionArea, CardContent, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
@@ -44,6 +44,8 @@ import OutputIcon from '@mui/icons-material/Inventory2Outlined';
 import PlanIcon from '@mui/icons-material/DescriptionOutlined';
 import TrendIcon from '@mui/icons-material/TrendingUpRounded';
 import PersonIcon from '@mui/icons-material/PersonOutlineRounded';
+import ExpandIcon from '@mui/icons-material/OpenInFullRounded';
+import ShrinkIcon from '@mui/icons-material/CloseFullscreenRounded';
 import DownIcon from '@mui/icons-material/SouthEastRounded';
 import { api, useCollection, useGet, useLive } from '../api.js';
 import { Logo, StatusChip, duration, num } from '../ui.jsx';
@@ -245,6 +247,7 @@ function Main({ session, onChange, onExit }) {
   const [talk, setTalk] = useState(null); // { question } while the voice dialog is open
   const [asked, setAsked] = useState(null); // Ask Dr. Macx popup: { loading } → { msg } or { error }
   const [toast, setToast] = useState('');
+  const [max, setMax] = useState(null); // the section shown full screen, or null
   const t = useT();
 
   // Speak each new message once (not the ones already there when the screen opened).
@@ -282,6 +285,13 @@ function Main({ session, onChange, onExit }) {
     voice.say((GREET[lang] ?? GREET.en)(operator.name.split(' ')[0], row.code));
     onChange({ ...session, greet: false });
   }, [session.greet, row?.code]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!max) return undefined;
+    const key = (e) => e.key === 'Escape' && setMax(null);
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, [max]);
 
   // Sensor log: the last 3 minutes of each sensor (one value per live poll), for the sparklines.
   const log = useRef({});
@@ -352,13 +362,83 @@ function Main({ session, onChange, onExit }) {
   const attention = events.filter((e) => e.stop || e.needsAnswer);
   const investigate = (said && events.find((e) => e.message?.id === said.id)) ?? attention[0];
   const facts = factsOf([...pendingNow, ...(shiftStops.data?.events ?? [])], row, now);
+  // every section can be shown on its own, large, in the middle (the top bar stays); Esc or the button brings all back
+  const full = (id) => <FullButton on={max === id} onClick={() => setMax(max === id ? null : id)} />;
+
+  const sec = {
+    hero: (
+      <Hero
+        action={full('hero')}
+        said={said} question={question} row={row} now={now} short={short} demo={demo} onAdvice={messages.reload} emotion={emotion} mood={mood} talking={voice.talking} reduced={reduced} facts={facts}
+        onReplay={(m) => voice.say(m.text)} canInvestigate={!!investigate} onInvestigate={() => setOpenEv(investigate)}
+        asking={!!asked?.loading} onAsk={ask} onExplain={() => setTalk({})} onAnswer={() => setTalk({ question })}
+      />
+    ),
+    oee: <OeePanel action={full('oee')} row={row} ring={max === 'oee' ? 180 : short ? 80 : 92} demo={demo} />,
+    status: <MachineStatus action={full('status')} row={row} now={now} />,
+    progress: <Progress action={full('progress')} row={row} live={live} now={now} />,
+    sensors: <KeySensors action={full('sensors')} row={row} sensors={sensors} onPick={showAnatomy} onAll={() => (setMax(null), setTab('sensors'))} />,
+    attention: (
+      <Attention
+        action={full('attention')} attention={attention} pendingNow={pendingNow} pendingBefore={pendingBefore} reasons={reasons.rows} machineId={machineId} operator={operator}
+        onDone={reload} onEarlier={() => setHistory('earlier')} onAll={() => (setMax(null), setTab('events'))} handlers={handlers}
+      />
+    ),
+    conversation: <Recent action={full('conversation')} title="Recent conversation" messages={messages.data} events={events} onOpen={handlers.onOpen} onAll={() => setAllSaid(true)} />,
+  };
+  sec.tabs = (
+    <Card data-tour="kiosk-tabs" sx={{ ...panel, p: 1, display: 'flex', flexDirection: 'column', gap: 1, height: max === 'tabs' ? '100%' : 'auto' }}>
+      <Stack direction="row" alignItems="center" gap={1} sx={{ borderBottom: 1, borderColor: 'divider' }}>
+        <Tabs
+          value={tab} onChange={(e, v) => setTab(v)} variant="scrollable"
+          sx={{ flex: 1, minHeight: 34, '& .MuiTab-root': { minHeight: 34, py: 0, fontSize: 13.5, px: 1.75 } }}
+        >
+          <Tab value="overview" label={t('Overview')} />
+          <Tab value="events" label={<Stack direction="row" gap={0.75} alignItems="center">{t('Events')}{waiting > 0 && <Chip size="small" color="error" label={waiting} sx={{ height: 18, fontSize: 11, '& .MuiChip-label': { px: 0.75 } }} />}</Stack>} />
+          <Tab value="sensors" label={t('Sensors')} />
+          <Tab value="anatomy" label={t('Machine anatomy')} />
+        </Tabs>
+        {full('tabs')}
+      </Stack>
+
+      {tab === 'overview' && (
+        <Box sx={{ flex: 1, minHeight: 0, display: 'grid', gap: 1, gridTemplateColumns: fit ? 'minmax(0,1.35fr) minmax(0,1fr) minmax(0,1fr)' : '1fr' }}>
+          <Stack gap={1} minHeight={0} minWidth={0} sx={{ overflowY: fit ? 'auto' : 'visible' }}>
+            {sec.progress}
+            {sec.sensors}
+          </Stack>
+          {sec.attention}
+          {sec.conversation}
+        </Box>
+      )}
+      {tab === 'events' && (
+        <Stack direction="row" alignItems="center" gap={1}>
+          <EventFilter value={filter} onChange={setFilter} />
+          <Box flex={1} />
+          <Button data-tour="kiosk-showall" size="small" endIcon={<ArrowIcon />} onClick={() => setHistory('shift')} sx={{ minHeight: 32, whiteSpace: 'nowrap' }}>{t('Show all')}</Button>
+        </Stack>
+      )}
+      {tab === 'events' && pendingBefore.length > 0 && <EarlierButton count={pendingBefore.length} onClick={() => setHistory('earlier')} />}
+      {tab !== 'overview' && (
+        <Box sx={{ flex: 1, minHeight: fit ? 0 : 420, overflowY: 'auto', pr: 0.25 }}>
+          {tab === 'events' && (filter === 'all' || filter === 'downtime') && (
+            <BulkConfirm stops={pendingNow} reasons={reasons.rows} machineId={machineId} operatorId={operator.id} onDone={reload} />
+          )}
+          {tab === 'events' && (messages.data ? <EventList events={events} filter={filter} dense {...handlers} /> : <LinearProgress />)}
+          {tab === 'sensors' && <SensorsTab row={row} sensors={sensors} log={log.current} operator={operator} onPick={showAnatomy} />}
+          {tab === 'anatomy' && <AnatomyTab row={row} sensors={sensors} lit={lit} onClear={() => setLit(null)} events={events} onOpen={handlers.onOpen} />}
+        </Box>
+      )}
+    </Card>
+  );
+  const tall = ['hero', 'tabs', 'attention', 'conversation'].includes(max); // these fill the height; the others stay their size
 
   return (
     <Box
       sx={{
         bgcolor: 'background.default', p: 1.5, gap: 1.5,
-        minHeight: '100vh', height: fit ? '100vh' : 'auto', overflow: fit ? 'hidden' : 'visible',
-        display: 'grid', gridTemplateRows: fit ? 'auto minmax(0,1fr) minmax(0,1fr)' : 'auto', gridTemplateColumns: 'minmax(0,1fr)',
+        minHeight: '100vh', height: fit || max ? '100vh' : 'auto', overflow: fit || max ? 'hidden' : 'visible',
+        display: 'grid', gridTemplateRows: max ? 'auto minmax(0,1fr)' : fit ? 'auto minmax(0,1fr) minmax(0,1fr)' : 'auto', gridTemplateColumns: 'minmax(0,1fr)',
       }}
     >
       <TopBar
@@ -366,62 +446,25 @@ function Main({ session, onChange, onExit }) {
         settings={<SettingsMenu languages={languages} lang={lang} voiceOn={voiceOn} onLang={(l) => onChange({ ...session, lang: l })} onVoice={() => onChange({ ...session, voice: !voiceOn })} onHandovers={() => setHandovers(true)} />}
       />
 
-      {/* the machine speaks (left) beside its OEE and status (right) */}
-      <Box sx={{ display: 'grid', gap: 1.5, minWidth: 0, minHeight: 0, gridTemplateColumns: fit ? 'minmax(0,2.6fr) minmax(0,1fr)' : '1fr' }}>
-        <Hero
-          said={said} question={question} row={row} now={now} short={short} demo={demo} onAdvice={messages.reload} emotion={emotion} mood={mood} talking={voice.talking} reduced={reduced} facts={facts}
-          onReplay={(m) => voice.say(m.text)} canInvestigate={!!investigate} onInvestigate={() => setOpenEv(investigate)}
-          asking={!!asked?.loading} onAsk={ask} onExplain={() => setTalk({})} onAnswer={() => setTalk({ question })}
-        />
-        <Stack gap={1.5} minWidth={0} minHeight={0} sx={{ overflowY: fit ? 'auto' : 'visible' }}>
-          <OeePanel row={row} ring={short ? 80 : 92} demo={demo} />
-          <MachineStatus row={row} now={now} />
-        </Stack>
-      </Box>
-
-      <Card data-tour="kiosk-tabs" sx={{ ...panel, p: 1, display: 'flex', flexDirection: 'column', gap: 1, height: fit ? 'auto' : 'auto' }}>
-        <Tabs
-          value={tab} onChange={(e, v) => setTab(v)} variant="scrollable"
-          sx={{ minHeight: 34, borderBottom: 1, borderColor: 'divider', '& .MuiTab-root': { minHeight: 34, py: 0, fontSize: 13.5, px: 1.75 } }}
-        >
-          <Tab value="overview" label={t('Overview')} />
-          <Tab value="events" label={<Stack direction="row" gap={0.75} alignItems="center">{t('Events')}{waiting > 0 && <Chip size="small" color="error" label={waiting} sx={{ height: 18, fontSize: 11, '& .MuiChip-label': { px: 0.75 } }} />}</Stack>} />
-          <Tab value="sensors" label={t('Sensors')} />
-          <Tab value="anatomy" label={t('Machine anatomy')} />
-        </Tabs>
-
-        {tab === 'overview' && (
-          <Box sx={{ flex: 1, minHeight: 0, display: 'grid', gap: 1, gridTemplateColumns: fit ? 'minmax(0,1.35fr) minmax(0,1fr) minmax(0,1fr)' : '1fr' }}>
-            <Stack gap={1} minHeight={0} minWidth={0} sx={{ overflowY: fit ? 'auto' : 'visible' }}>
-              <Progress row={row} live={live} now={now} />
-              <KeySensors row={row} sensors={sensors} onPick={showAnatomy} onAll={() => setTab('sensors')} />
+      {max ? (
+        <Box sx={{ minHeight: 0, display: 'flex', flexDirection: 'column', justifyContent: tall ? 'stretch' : 'center', alignItems: 'center' }}>
+          <Box sx={{ width: '100%', maxWidth: 1280, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', ...(tall && { flex: 1 }), '& > *': { flex: tall ? 1 : 'none' } }}>
+            {sec[max]}
+          </Box>
+        </Box>
+      ) : (
+        <>
+          {/* the machine speaks (left) beside its OEE and status (right) */}
+          <Box sx={{ display: 'grid', gap: 1.5, minWidth: 0, minHeight: 0, gridTemplateColumns: fit ? 'minmax(0,2.6fr) minmax(0,1fr)' : '1fr' }}>
+            {sec.hero}
+            <Stack gap={1.5} minWidth={0} minHeight={0} sx={{ overflowY: fit ? 'auto' : 'visible' }}>
+              {sec.oee}
+              {sec.status}
             </Stack>
-            <Attention
-              attention={attention} pendingNow={pendingNow} pendingBefore={pendingBefore} reasons={reasons.rows} machineId={machineId} operator={operator}
-              onDone={reload} onEarlier={() => setHistory('earlier')} onAll={() => setTab('events')} handlers={handlers}
-            />
-            <Recent title="Recent conversation" messages={messages.data} events={events} onOpen={handlers.onOpen} onAll={() => setAllSaid(true)} />
           </Box>
-        )}
-        {tab === 'events' && (
-          <Stack direction="row" alignItems="center" gap={1}>
-            <EventFilter value={filter} onChange={setFilter} />
-            <Box flex={1} />
-            <Button data-tour="kiosk-showall" size="small" endIcon={<ArrowIcon />} onClick={() => setHistory('shift')} sx={{ minHeight: 32, whiteSpace: 'nowrap' }}>{t('Show all')}</Button>
-          </Stack>
-        )}
-        {tab === 'events' && pendingBefore.length > 0 && <EarlierButton count={pendingBefore.length} onClick={() => setHistory('earlier')} />}
-        {tab !== 'overview' && (
-          <Box sx={{ flex: 1, minHeight: fit ? 0 : 420, overflowY: 'auto', pr: 0.25 }}>
-            {tab === 'events' && (filter === 'all' || filter === 'downtime') && (
-              <BulkConfirm stops={pendingNow} reasons={reasons.rows} machineId={machineId} operatorId={operator.id} onDone={reload} />
-            )}
-            {tab === 'events' && (messages.data ? <EventList events={events} filter={filter} dense {...handlers} /> : <LinearProgress />)}
-            {tab === 'sensors' && <SensorsTab row={row} sensors={sensors} log={log.current} operator={operator} onPick={showAnatomy} />}
-            {tab === 'anatomy' && <AnatomyTab row={row} sensors={sensors} lit={lit} onClear={() => setLit(null)} events={events} onOpen={handlers.onOpen} />}
-          </Box>
-        )}
-      </Card>
+          {sec.tabs}
+        </>
+      )}
 
       {opened && (
         <EventDetail
@@ -585,7 +628,7 @@ function Recent15({ now, shift, target, inline }) {
   );
 }
 
-function OeePanel({ row, ring, demo }) {
+function OeePanel({ action, row, ring, demo }) {
   const t = useT();
   const sim = useSim(row); // simulation controls show only for dummy-generator machines (row.sim)
   const lv = (k) => LV[level(row[k], row.targets?.[k])];
@@ -605,6 +648,7 @@ function OeePanel({ row, ring, demo }) {
             {t('Last 15 min')} <Recent15 now={row.last15.oee} shift={row.oee} target={row.targets?.oee} inline />
           </Typography>
         )}
+        {action}
       </Stack>
       <Stack direction="row" gap={1.5} alignItems="center">
         <Stack alignItems="center" gap={0.75} flex="none">
@@ -646,7 +690,7 @@ const STATE_COLOR = { ok: SEV.ok.color, warn: SEV.warn.color, alarm: SEV.error.c
 const worst = (row, ids) => ['alarm', 'warn', 'ok'].find((s) => ids.some((id) => row.sensorStatus?.[id] === s)) ?? 'none';
 const word = (state, ok) => ({ ok, warn: 'Warning', alarm: 'Alarm', none: 'No data' })[state];
 
-function MachineStatus({ row, now }) {
+function MachineStatus({ action, row, now }) {
   const t = useT();
   const alarm = row.tags?.alarmCode;
   const premium = row.setup === 'premium';
@@ -666,6 +710,7 @@ function MachineStatus({ row, now }) {
         <StatusIcon sx={{ fontSize: 17, color: 'text.secondary' }} />
         <Typography fontWeight={700} fontSize={13} component="h2" flex={1}>{t('Machine status')}</Typography>
         <Typography variant="caption" color="text.secondary">{t('Updated')} {new Date(now).toLocaleTimeString(undefined, { hourCycle: 'h23' })}</Typography>
+        {action}
       </Stack>
       <Box sx={{ display: 'grid', gap: 0.75, gridTemplateColumns: 'repeat(4, minmax(0,1fr))' }}>
         {tiles.map(({ Icon, label, value, state }) => (
@@ -716,14 +761,21 @@ function factsOf(stops, row, now) {
 
 // The machine speaks: its face and mood on the left; on the right the headline, what it said (tap to read all), three
 // facts, and what the operator can do: investigate it, ask, explain or answer.
-function Hero({ said, question, row, now, short, demo, onAdvice, emotion, mood, talking, reduced, facts, onReplay, canInvestigate, onInvestigate, asking, onAsk, onExplain, onAnswer }) {
+function Hero({ action, said, question, row, now, short, demo, onAdvice, emotion, mood, talking, reduced, facts, onReplay, canInvestigate, onInvestigate, asking, onAsk, onExplain, onAnswer }) {
   const t = useT();
   const [open, setOpen] = useState(false);
+  const [crowded, setCrowded] = useState(false); // the opened text does not fit: the facts and buttons step aside
   const [menu, setMenu] = useState(null);
+  const col = useRef(null);
   useEffect(() => setOpen(false), [said?.id]);
+  useLayoutEffect(() => {
+    if (!open) return setCrowded(false);
+    if (col.current && col.current.scrollHeight > col.current.clientHeight + 1) setCrowded(true);
+  }, [open]);
   const toggle = () => setOpen(!open);
   return (
-    <Card data-tour="kiosk-soul" sx={{ ...panel, p: 1.5, display: 'grid', gap: 2, minWidth: 0, overflowY: 'auto', gridTemplateColumns: { xs: '1fr', md: 'minmax(0,4fr) minmax(0,6fr)' } }}>
+    <Card data-tour="kiosk-soul" sx={{ ...panel, position: 'relative', p: 1.5, display: 'grid', gap: 2, minWidth: 0, overflowY: 'auto', gridTemplateColumns: { xs: '1fr', md: 'minmax(0,4fr) minmax(0,6fr)' } }}>
+      <Box sx={{ position: 'absolute', top: 6, right: 6, zIndex: 1 }}>{action}</Box>
       <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: { xs: 240, md: 0 } }}>
         <Stack direction="row" alignItems="center" gap={1}>
           <WaveIcon sx={{ color: C.blue }} />
@@ -739,7 +791,7 @@ function Hero({ said, question, row, now, short, demo, onAdvice, emotion, mood, 
         {demo && row.sim && <DemoActions row={row} onAdvice={onAdvice} />}
       </Box>
 
-      <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 0.75, minWidth: 0 }}>
+      <Box ref={col} sx={{ display: 'flex', flexDirection: 'column', justifyContent: crowded ? 'flex-start' : 'center', gap: 0.75, minWidth: 0, minHeight: 0, overflowY: crowded ? 'auto' : 'visible' }}>
         {said && (
           <Typography color="text.secondary" fontSize={12.5}>
             {t('Since')} {hhmm(said.at)} · <b style={{ color: SEV.error.text }}>{duration(Math.max(0, now - said.at))}</b> {t('ago')}
@@ -770,7 +822,7 @@ function Hero({ said, question, row, now, short, demo, onAdvice, emotion, mood, 
           </Typography>
           <Typography color="text.secondary" fontSize={11.5}>{t(open ? 'Tap to fold' : 'Tap to read all')}</Typography>
         </Box>
-        <Box sx={{ display: 'grid', gap: 0.75, gridTemplateColumns: { xs: '1fr', sm: `repeat(${facts.length}, minmax(0,1fr))` } }}>
+        <Box sx={{ display: crowded ? 'none' : 'grid', gap: 0.75, gridTemplateColumns: { xs: '1fr', sm: `repeat(${facts.length}, minmax(0,1fr))` } }}>
           {facts.map(({ Icon, sev, big, small }) => (
             <Stack key={`${big}-${small}`} direction="row" gap={1} alignItems="center" sx={{ px: 1, py: 0.5, borderRadius: R.inner, border: `1px solid ${C.line}`, minWidth: 0 }}>
               <Box sx={{ width: 28, height: 28, borderRadius: '50%', bgcolor: sev.bg, display: 'grid', placeItems: 'center', flex: 'none' }}><Icon sx={{ fontSize: 16, color: sev.color }} /></Box>
@@ -781,7 +833,7 @@ function Hero({ said, question, row, now, short, demo, onAdvice, emotion, mood, 
             </Stack>
           ))}
         </Box>
-        <Box data-tour="kiosk-actions" sx={{ display: 'grid', gap: 0.75, gridTemplateColumns: { xs: '1fr', sm: 'minmax(0,1fr) minmax(0,1fr)' } }}>
+        <Box data-tour="kiosk-actions" sx={{ display: crowded ? 'none' : 'grid', gap: 0.75, gridTemplateColumns: { xs: '1fr', sm: 'minmax(0,1fr) minmax(0,1fr)' } }}>
           <Button
             variant="contained" disabled={!canInvestigate} onClick={onInvestigate} startIcon={<SearchIcon />} endIcon={<ArrowIcon />}
             sx={{ minHeight: 38, fontSize: 14, fontWeight: 700, borderRadius: R.inner }}
@@ -823,6 +875,19 @@ function DemoActions({ row, onAdvice }) {
   );
 }
 
+// Show one section full screen (or bring all back).
+function FullButton({ on, onClick }) {
+  const t = useT();
+  const label = t(on ? 'Show all sections' : 'Full screen');
+  return (
+    <Tooltip title={label}>
+      <IconButton size="small" aria-label={label} aria-pressed={on} onClick={onClick} sx={{ width: 28, height: 28, flex: 'none', color: on ? C.blue : 'text.secondary' }}>
+        {on ? <ShrinkIcon sx={{ fontSize: 17 }} /> : <ExpandIcon sx={{ fontSize: 17 }} />}
+      </IconButton>
+    </Tooltip>
+  );
+}
+
 // The gear in the top bar: kiosk language, voice on / off and the shift handovers.
 function SettingsMenu({ languages, lang, voiceOn, onLang, onVoice, onHandovers }) {
   const t = useT();
@@ -854,7 +919,7 @@ function SettingsMenu({ languages, lang, voiceOn, onLang, onVoice, onHandovers }
 
 // Overview: a few key sensors with their live value and OK / Warning / Alarm (tap one to see it on the anatomy).
 const fmt = (v) => (v == null ? '—' : Number.isInteger(v) ? num(v) : v.toFixed(1));
-function KeySensors({ row, sensors, onPick, onAll }) {
+function KeySensors({ action, row, sensors, onPick, onAll }) {
   const t = useT();
   const list = sensors.filter((s) => s.id !== 'alarm').slice(0, 6);
   return (
@@ -863,6 +928,7 @@ function KeySensors({ row, sensors, onPick, onAll }) {
         <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: row.readings ? SEV.ok.color : '#94A3B8' }} />
         <Typography fontWeight={700} fontSize={13.5} flex={1}>{t('Key sensors')} <Typography component="span" fontSize={12.5} color={row.readings ? SEV.ok.text : 'text.secondary'}>({t(row.readings ? 'Live' : 'No data')})</Typography></Typography>
         <Button size="small" endIcon={<ArrowIcon />} onClick={onAll} sx={{ minHeight: 28, py: 0 }}>{t('View all')}</Button>
+        {action}
       </Stack>
       <Box sx={{ display: 'grid', gap: 0.75, gridAutoFlow: 'column', gridAutoColumns: 'minmax(84px, 1fr)', overflowX: 'auto', pb: 0.25 }}>
         {list.map((s) => {
@@ -894,7 +960,7 @@ function EarlierButton({ count, onClick }) {
   );
 }
 
-function Attention({ attention, pendingNow, pendingBefore, reasons, machineId, operator, onDone, onEarlier, onAll, handlers }) {
+function Attention({ action, attention, pendingNow, pendingBefore, reasons, machineId, operator, onDone, onEarlier, onAll, handlers }) {
   const t = useT();
   const questions = attention.filter((e) => e.needsAnswer);
   const stops = attention.filter((e) => !e.needsAnswer);
@@ -905,6 +971,7 @@ function Attention({ attention, pendingNow, pendingBefore, reasons, machineId, o
         <Typography fontWeight={700} fontSize={14} flex={1} noWrap>{t('Needs your attention')}</Typography>
         {attention.length > 0 && <Chip size="small" color="error" label={`${attention.length} ${t(attention.length === 1 ? 'event' : 'events')}`} sx={{ height: 20, fontSize: 11.5 }} />}
         <Button size="small" endIcon={<ArrowIcon />} onClick={onAll} sx={{ minHeight: 28, py: 0 }}>{t('View all')}</Button>
+        {action}
       </Stack>
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 0.75 }}>
         {pendingBefore.length > 0 && <EarlierButton count={pendingBefore.length} onClick={onEarlier} />}
@@ -924,7 +991,7 @@ function Attention({ attention, pendingNow, pendingBefore, reasons, machineId, o
 const DOT = { stop: SEV.error.color, anomaly: SEV.warn.color, risk: SEV.warn.color, question: SEV.ask.color, report: SEV.ok.color, cycle: SEV.info.color, handover: SEV.info.color, advice: SEV.info.color, operator: '#94A3B8' };
 const KIND = { advice: 'Advice', report: 'Report', operator: 'You said', stop: 'Stop', risk: 'Target risk', question: 'Question', anomaly: 'Sensor alert', cycle: 'Cycle time', handover: 'Handover', info: 'Info' };
 
-function Recent({ title = 'Recent messages', messages, events, onOpen, onAll }) {
+function Recent({ action, title = 'Recent messages', messages, events, onOpen, onAll }) {
   const t = useT();
   const byMessage = new Map(events.filter((e) => e.message).map((e) => [e.message.id, e]));
   return (
@@ -932,6 +999,7 @@ function Recent({ title = 'Recent messages', messages, events, onOpen, onAll }) 
       <Stack direction="row" alignItems="center" sx={{ px: 1.25, py: 0.5, borderBottom: `1px solid ${C.line}` }}>
         <Typography fontWeight={700} fontSize={14} flex={1}>{t(title)}</Typography>
         <Button size="small" endIcon={<ArrowIcon />} onClick={onAll} sx={{ minHeight: 28, py: 0 }}>{t('View all')}</Button>
+        {action}
       </Stack>
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', py: 0.5 }}>
         {!messages && <LinearProgress />}
@@ -991,7 +1059,7 @@ function SaidList({ messages, onReplay, onAnatomy }) {
 }
 
 // Schedule vs actual for this shift: good pieces of the shift plan, where the schedule is now, and the projected end.
-function Progress({ row, live, now }) {
+function Progress({ action, row, live, now }) {
   const t = useT();
   // the shift forecast from the server: the same numbers the press says out loud and the handover writes
   const f = row.forecast ?? { good: 0, toNow: 0, plan: 0, target: 0, projected: 0 };
@@ -1021,6 +1089,7 @@ function Progress({ row, live, now }) {
             {duration(Math.max(0, live.shift.end - now))} {t('left')} · {num(plan.toNow)} {t('pcs due by now')}
           </Typography>
         </Tooltip>
+        {action}
       </Stack>
       <Stack direction="row" alignItems="center" gap={2}>
         <Box sx={{ position: 'relative', flex: 1, height: 10, borderRadius: 5, bgcolor: '#E2E8F0', overflow: 'hidden' }} role="img" aria-label={`${t('Actual qty by now')} ${good} · ${t('Schedule plan')} ${plan.shift}`}>
