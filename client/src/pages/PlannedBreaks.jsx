@@ -38,10 +38,11 @@ export default function PlannedBreaks() {
             <CardContent>
               <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
                 <Typography variant="h6" component="h2">Planned breaks</Typography>
-                <Button startIcon={<AddIcon />} onClick={() => setForm({ ...form, breaks: [...form.breaks, { name: '', start: '12:00', end: '12:30' }] })}>Add break</Button>
+                <Button data-tour="breaks-add" startIcon={<AddIcon />} onClick={() => setForm({ ...form, breaks: [...form.breaks, { name: '', start: '12:00', end: '12:30' }] })}>Add break</Button>
               </Stack>
               <Typography variant="body2" color="text.secondary" mb={2}>Same times every day. Break time is not planned time, so it never lowers Availability.</Typography>
               <TextField
+                data-tour="breaks-tolerance"
                 type="number"
                 label="Break tolerance (minutes)"
                 value={form.breakToleranceMin ?? 5}
@@ -50,7 +51,7 @@ export default function PlannedBreaks() {
                 slotProps={{ htmlInput: { min: 0, max: 30, step: 1 } }}
                 sx={{ mb: 2.5, maxWidth: 520 }}
               />
-              <Stack spacing={2}>
+              <Stack spacing={2} data-tour="breaks-list">
                 {form.breaks.map((b, i) => (
                   <Stack key={i} direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
                     <TextField label="Name" value={b.name} onChange={(e) => setBreak(i, { name: e.target.value })} sx={{ flex: 2 }} placeholder="Shift 1 lunch" />

@@ -1,7 +1,8 @@
-// Live layer: reads each active press's sensors every second (simulator now, PLC via Kepware later),
+// Live layer: reads each active press's sensors every second (from Kepware, or the simulator for demos),
 // turns them into OEE tags, records hourly OEE buckets and downtime events to Firestore, sends per-minute
 // sensor summaries to BigQuery, and serves the current-shift snapshot.
 import { currentShift, onBreak, breakIn, oee, add, ZERO, excludePlanned, schedulePlan, shiftForecast } from './oee.js';
+import { kepwareReadings } from './kepware.js';
 import { newDummy, dummyStep, injectFault, levelOf, MODES, INJECT, FACTORS } from './dummy.js';
 import { newRecorder, record } from './recorder.js';
 import { DEFAULT_TARGETS } from './validate.js';
@@ -88,8 +89,14 @@ export function startLive(db) {
           s.recent = snap.docs.map((d) => d.data());
         });
       }
-      // ponytail: Kepware read not wired yet; a PLC-source machine reports "disconnected".
-      s.readings = m.active && m.source === 'dummy' ? dummyStep(s.gen, m, dt, { hour, onBreak: br, breakIn: nextBreak }) : null;
+      // Switching between simulator and Kepware: their counters never compare, so start counting afresh.
+      if (s.source !== m.source) {
+        s.source = m.source;
+        Object.assign(s, { readings: null, tags: null });
+        delete s.rec.lastTotal;
+        delete s.rec.lastNg;
+      }
+      s.readings = !m.active ? null : m.source === 'kepware' ? kepwareReadings(m, s.readings) : dummyStep(s.gen, m, dt, { hour, onBreak: br, breakIn: nextBreak });
       const prevReject = s.tags?.rejectCount;
       s.tags = s.readings && toOeeTags(m, s.readings, s.manualNc);
       if (s.readings) {
@@ -99,7 +106,7 @@ export function startLive(db) {
         // per-minute sensor summary for BigQuery
         const minute = minuteOf(now);
         if (s.agg && s.agg.start !== minute) {
-          s.rows.push(minuteRow(s.agg, m, s.gen.mode));
+          s.rows.push(minuteRow(s.agg, m, m.source === 'kepware' ? 'kepware' : s.gen.mode));
           s.lastMinutes.push(s.agg); // rolling window for the "last 15 min" figures
           if (s.lastMinutes.length > 14) s.lastMinutes.shift();
         }

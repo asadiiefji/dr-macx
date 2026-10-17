@@ -122,7 +122,7 @@ function Drawing({ parts, litPart, faultPart, running, reduced, onFocus, onPick 
     return [Math.min(...xs) - 30, Math.min(...ys) - 30, Math.max(...xs) - Math.min(...xs) + 60, Math.max(...ys) - Math.min(...ys) + 60];
   }, [parts]);
   return (
-    <svg viewBox={box.join(' ')} width="100%" height="100%" role="img" aria-label="Isometric drawing of the press with its sensors">
+    <svg viewBox={box.join(' ')} width="100%" height="100%" role="img" aria-label="Isometric drawing of the machine with its sensors">
       {sorted.map((p) => {
         const sensorPart = !!p.part;
         return (
@@ -174,7 +174,7 @@ const colorOf = (p, litPart, faultPart) => (p.id === faultPart?.id ? FAULT : p.i
 
 // lit = a part to point at (e.g. "View part"); fault = the sensor that raised the problem (red, stays while you
 // hover other parts; defaults to a sensor in alarm). height = the drawing's height: the text below adds to it.
-export default function Anatomy({ m, lit, fault, title = 'Press anatomy', number = 1, height = 320 }) {
+export default function Anatomy({ m, lit, fault, title = 'Machine anatomy', number = 1, height = 320 }) {
   const t = useT();
   const catalog = useSensorCatalog();
   const reduced = useMediaQuery('(prefers-reduced-motion: reduce)');

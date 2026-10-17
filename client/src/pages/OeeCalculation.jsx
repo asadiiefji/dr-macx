@@ -19,7 +19,7 @@ const pc = (v) => `${(v * 100).toFixed(1)}%`;
 
 const FACTORS = [
   {
-    key: 'A', name: 'Availability', Icon: AvailabilityIcon, color: '#1565C0', question: 'Was the press running when it should have been?',
+    key: 'A', name: 'Availability', Icon: AvailabilityIcon, color: '#1565C0', question: 'Was the machine running when it should have been?',
     formula: 'Run time ÷ Planned time', example: `${EX.run} min ÷ ${EX.planned} min = ${pc(EX.A)}`,
     losses: ['Breakdowns (e.g. hydraulic pressure low)', 'Material jams and short stops', 'Die changes and setups', 'Waiting for coil or material'],
     source: 'Motor current sensor: running, idle or off, every second. A stop outside a planned break is downtime and waits for a reason.',
@@ -34,7 +34,7 @@ const FACTORS = [
     key: 'Q', name: 'Quality', Icon: QualityIcon, color: '#2E7D32', question: 'Were the parts made good the first time?',
     formula: 'Good parts ÷ Total count', example: `${(EX.total - EX.nc).toLocaleString()} ÷ ${EX.total.toLocaleString()} = ${pc(EX.Q)}`,
     losses: ['NC (non-conformance) parts', 'Parts scrapped after a die change or setup', 'Parts damaged by a sticking part or loose node'],
-    source: 'Vision camera counts NC parts on Premium presses; on Essential presses the operator enters them.',
+    source: 'Vision camera counts NC parts on Premium machines; on Essential machines the operator enters them.',
   },
 ];
 
@@ -53,7 +53,7 @@ export default function OeeCalculation() {
       <PageHeader overline="MASTER DATA" title="OEE calculation" tour="oee" />
       <Stack spacing={2}>
         {/* the summary: OEE in one line and the example result */}
-        <Card>
+        <Card data-tour="oee-summary">
           <CardContent>
             <Stack direction={{ xs: 'column', md: 'row' }} gap={3} alignItems={{ md: 'center' }}>
               <Box flex={1}>
@@ -61,7 +61,7 @@ export default function OeeCalculation() {
                 <Typography variant="h5" component="h2" mb={1}>OEE = Availability × Performance × Quality</Typography>
                 <Typography color="text.secondary" lineHeight={1.7}>
                   OEE tells how much of the planned time turned into good parts at full speed. 100% means only good parts,
-                  as fast as possible, with no stops. World-class presses run at about 85%. Every shift is scored on its own, live, every second.
+                  as fast as possible, with no stops. World-class machines run at about 85%. Every shift is scored on its own, live, every second.
                 </Typography>
               </Box>
               <Box sx={{ p: 2, borderRadius: '12px', bgcolor: C.light, minWidth: 260 }}>
@@ -75,7 +75,7 @@ export default function OeeCalculation() {
         </Card>
 
         {/* A, P, Q: what each one asks, its formula, what lowers it, where the number comes from */}
-        <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', lg: 'repeat(3, 1fr)' } }}>
+        <Box data-tour="oee-factors" sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', lg: 'repeat(3, 1fr)' } }}>
           {FACTORS.map((f) => (
             <Card key={f.key} sx={{ borderTop: `4px solid ${f.color}` }}>
               <CardContent>
@@ -100,7 +100,7 @@ export default function OeeCalculation() {
         </Box>
 
         {/* the example shift as a waterfall from clock time to good parts */}
-        <Card>
+        <Card data-tour="oee-waterfall">
           <CardContent>
             <Typography variant="h6" component="h2">From shift time to good parts</Typography>
             <Typography variant="body2" color="text.secondary" mb={2}>The example shift, step by step (minutes). Each step removes one kind of loss.</Typography>
@@ -121,7 +121,7 @@ export default function OeeCalculation() {
         </Card>
 
         {/* the rules behind it */}
-        <Card>
+        <Card data-tour="oee-notes">
           <CardContent>
             <Typography variant="h6" component="h2" mb={1.5}>Good to know</Typography>
             <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>

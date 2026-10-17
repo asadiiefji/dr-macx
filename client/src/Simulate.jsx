@@ -46,7 +46,7 @@ export function FactorSim({ m, factor, sim }) {
 export function BreakdownButton({ sim, sx }) {
   const t = useT();
   return (
-    <Tooltip title={t('Simulation: the press breaks down now (hydraulic fault, alarm 310, 10–25 min)')}>
+    <Tooltip title={t('Simulation: the machine breaks down now (hydraulic fault, alarm 310, 10–25 min)')}>
       <Button size="small" variant="outlined" color="error" startIcon={<BreakdownIcon />} onClick={() => sim.send({ inject: 'breakdown' })} sx={{ minHeight: 28, py: 0, px: 1.25, fontSize: 12.5, borderRadius: '6px', ...sx }}>
         {t('Breakdown')}
       </Button>

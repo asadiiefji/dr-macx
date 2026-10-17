@@ -43,9 +43,9 @@ export function MasterPage({ col, title, noun, fields, columns, sortKey, note, s
       ) : (
         <PageHeader overline="MASTER DATA" title={title} tour={tour}>{add}</PageHeader>
       )}
-      {note && <Alert severity="info" sx={{ mb: 2 }}>{note}</Alert>}
+      {note && <Alert severity="info" sx={{ mb: 2 }} data-tour="master-note">{note}</Alert>}
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-      <TableContainer component={Card}>
+      <TableContainer component={Card} data-tour="master-table">
         <Table sx={{ minWidth: 560 }}>
           <TableHead>
             <TableRow>

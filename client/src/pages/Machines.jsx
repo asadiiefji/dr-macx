@@ -8,6 +8,7 @@ import AddIcon from '@mui/icons-material/AddOutlined';
 import DeleteIcon from '@mui/icons-material/DeleteOutlined';
 import { api, useCollection } from '../api.js';
 import { PageHeader, Mono, SkillChip } from '../ui.jsx';
+import { TourButton } from '../Tour.jsx';
 import { KPIS, LEVELS, MONO, SKILLS } from '../theme.js';
 import { SETUP_TEXT, sensorsFor, useSensorCatalog } from '../sensors.js';
 
@@ -34,7 +35,7 @@ export default function Machines() {
 
   const crew = (id) => skills.rows.filter((s) => s.machineId === id && s.level >= 2).length;
   const remove = async (m) => {
-    if (!window.confirm(`Delete machine ${m.code}? Its skill-matrix entries are deleted too.`)) return;
+    if (!window.confirm(`Delete machine ${m.code}? Its OEE history, stops, messages and skill-matrix entries are deleted too. This cannot be undone. To stop monitoring it but keep its history, switch Active off instead.`)) return;
     await api(`/machines/${m.id}`, { method: 'DELETE' }).catch((e) => alert(e.message));
     reload();
     skills.reload();
@@ -47,12 +48,12 @@ export default function Machines() {
       </PageHeader>
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       {rows.filter((m) => m.cycleSuggestion?.status === 'pending').map((m) => <CycleSuggestion key={m.id} m={m} onDone={reload} />)}
-      <TableContainer component={Card}>
+      <TableContainer component={Card} data-tour="mach-table">
         <Table sx={{ minWidth: 760 }}>
           <TableHead>
             <TableRow>
               <TableCell>Code</TableCell><TableCell>Name</TableCell><TableCell>Line / Area</TableCell>
-              <TableCell align="right">Ideal CT (s)</TableCell><TableCell>Press</TableCell><TableCell>Sensors</TableCell><TableCell>Data source</TableCell><TableCell>Monitoring</TableCell>
+              <TableCell align="right">Ideal CT (s)</TableCell><TableCell>Machine type</TableCell><TableCell>Sensors</TableCell><TableCell>Data source</TableCell><TableCell>Monitoring</TableCell>
               <TableCell align="right">Operators</TableCell><TableCell aria-label="Actions" />
             </TableRow>
           </TableHead>
@@ -159,6 +160,8 @@ function MachineDialog({ machine, operators, skills, onClose, onSaved }) {
   const setTarget = (key, patch) => setM((x) => ({ ...x, targets: { ...x.targets, [key]: { ...x.targets[key], ...patch } } }));
   const levelOf = (opId) => levels[opId] ?? skills.find((s) => s.operatorId === opId && s.machineId === m.id)?.level ?? 0;
 
+  // An example Kepware device name for the placeholders, from the machine code: PRS-03 -> Press03.
+  const exampleDevice = `Press${m.code?.match(/\d+/)?.[0] ?? '01'}`;
   const fillTags = () => {
     const { channel, device } = m.kepware;
     if (!channel || !device) return setError('Enter Channel and Device first.');
@@ -182,10 +185,13 @@ function MachineDialog({ machine, operators, skills, onClose, onSaved }) {
     <Dialog open onClose={onClose} fullWidth maxWidth="md">
       <DialogTitle sx={{ pb: 0 }}>
         <Typography variant="overline" component="div">{m.id ? 'EDIT MACHINE' : 'NEW MACHINE'}</Typography>
-        <Typography variant="h5" component="span">{m.code ? `${m.code} · ${m.name}` : 'New machine'}</Typography>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
+          <Typography variant="h5" component="span">{m.code ? `${m.code} · ${m.name}` : 'New machine'}</Typography>
+          <TourButton id="machineEdit" />
+        </Stack>
       </DialogTitle>
       <Tabs value={tab} onChange={(e, v) => setTab(v)} variant="scrollable" sx={{ px: 2, borderBottom: 1, borderColor: 'divider' }}>
-        <Tab label="Identity" /><Tab label="OEE parameters" /><Tab label="Press & sensors" /><Tab label="Connection & tags" /><Tab label="Operators" />
+        <Tab label="Identity" data-tour="edit-tab-0" /><Tab label="OEE parameters" data-tour="edit-tab-1" /><Tab label="Machine & sensors" data-tour="edit-tab-2" /><Tab label="Connection & tags" data-tour="edit-tab-3" /><Tab label="Operators" data-tour="edit-tab-4" />
       </Tabs>
       <DialogContent sx={{ minHeight: 380 }}>
         <Stack spacing={2.5} pt={1}>
@@ -195,7 +201,7 @@ function MachineDialog({ machine, operators, skills, onClose, onSaved }) {
             <>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
                 <TextField label="Machine code" required value={m.code} onChange={(e) => set({ code: e.target.value })} helperText="e.g. PRS-03" slotProps={{ htmlInput: { style: { fontFamily: MONO } } }} sx={{ flex: 1 }} />
-                <TextField label="Machine name" required value={m.name} onChange={(e) => set({ name: e.target.value })} helperText="e.g. Press 03 · 200T" sx={{ flex: 2 }} />
+                <TextField label="Machine name" required value={m.name} onChange={(e) => set({ name: e.target.value })} helperText="e.g. Machine 03 · 400T straight-side" sx={{ flex: 2 }} />
               </Stack>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
                 <TextField label="Line" value={m.line} onChange={(e) => set({ line: e.target.value })} helperText="e.g. Line 2" sx={{ flex: 1 }} />
@@ -283,7 +289,7 @@ function MachineDialog({ machine, operators, skills, onClose, onSaved }) {
                 />
               </Stack>
               <Box>
-                <Typography fontWeight={600} mb={1}>Sensors on this press ({sensors.length})</Typography>
+                <Typography fontWeight={600} mb={1}>Sensors on this machine ({sensors.length})</Typography>
                 <Table size="small">
                   <TableHead><TableRow><TableCell>Sensor</TableCell><TableCell>Setup</TableCell><TableCell>Feeds</TableCell></TableRow></TableHead>
                   <TableBody>
@@ -311,13 +317,13 @@ function MachineDialog({ machine, operators, skills, onClose, onSaved }) {
               </Box>
               <Alert severity="info" icon={false}>
                 {m.source === 'dummy'
-                  ? 'Dr. Macx simulates this press’s sensors every 1 s (as the PLC would send them): strokes, motor current, stops with alarm codes and, on Premium, tonnage, vibration, temperatures, vision NC and acoustic. Tag addresses are optional here — fill them now so you can switch to Kepware later.'
-                  : 'The sensors are wired to the PLC; Dr. Macx will read each one as a tag from Kepware every 1 s. The Kepware connector is not wired yet, so this press shows "Not connected" until it is.'}
+                  ? 'Dr. Macx simulates this machine’s sensors every 1 s (as the PLC would send them): strokes, motor current, stops with alarm codes and, on Premium, tonnage, vibration, temperatures, vision NC and acoustic. Tag addresses are optional here — fill them now so you can switch to Kepware later.'
+                  : 'The sensors are wired to the PLC. Kepware IoT Gateway on the plant edge PC sends every tag to Dr. Macx each second; the tag addresses below must match its tag IDs. This machine shows "Not connected" while its part count, motor current or alarm tag (and vision NC on Premium) has sent nothing for 10 s.'}
               </Alert>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                <TextField label="Kepware endpoint" required={m.source === 'kepware'} value={m.kepware.endpoint} onChange={(e) => setKep({ endpoint: e.target.value })} placeholder="opc.tcp://192.168.1.10:49320" sx={{ flex: 2 }} />
+                <TextField label="Kepware endpoint (for reference)" value={m.kepware.endpoint} onChange={(e) => setKep({ endpoint: e.target.value })} placeholder="opc.tcp://192.168.1.10:49320" sx={{ flex: 2 }} />
                 <TextField label="Channel" value={m.kepware.channel} onChange={(e) => setKep({ channel: e.target.value })} placeholder="Channel1" sx={{ flex: 1 }} />
-                <TextField label="Device" value={m.kepware.device} onChange={(e) => setKep({ device: e.target.value })} placeholder="Press03" sx={{ flex: 1 }} />
+                <TextField label="Device" value={m.kepware.device} onChange={(e) => setKep({ device: e.target.value })} placeholder={exampleDevice} sx={{ flex: 1 }} />
               </Stack>
               <Stack direction="row" justifyContent="space-between" alignItems="center">
                 <Typography fontWeight={600}>Tag addresses</Typography>
@@ -333,7 +339,7 @@ function MachineDialog({ machine, operators, skills, onClose, onSaved }) {
                     size="small"
                     value={m.sensorTags?.[t.id] ?? ''}
                     onChange={(e) => setTag(t.id, e.target.value)}
-                    placeholder={`Channel1.Device1.${t.tag}`}
+                    placeholder={`${m.kepware.channel || 'Channel1'}.${m.kepware.device || exampleDevice}.${t.tag}`}
                     required={m.source === 'kepware'}
                     slotProps={{ htmlInput: { 'aria-label': `${t.label} tag address` } }}
                     sx={{ flex: 2 }}

@@ -30,11 +30,11 @@ export default function Settings() {
           <CardContent>
             <Typography variant="h6" component="h2">Dr. Macx Live</Typography>
             <Typography variant="body2" color="text.secondary" mb={2}>
-              Besides stops, sensor alerts, questions and shift handovers, the press gives its own advice (read by Gemini from its sensors,
-              stops and output) on this schedule. Each advice is one Gemini call per press.
+              Besides stops, sensor alerts, questions and shift handovers, the machine gives its own advice (read by Gemini from its sensors,
+              stops and output) on this schedule. Each advice is one Gemini call per machine.
             </Typography>
             <Stack spacing={2}>
-              <TextField select label="Advice from the press" value={form.adviceEveryMin ?? 60} onChange={(e) => setForm({ ...form, adviceEveryMin: Number(e.target.value) })} sx={{ maxWidth: 360 }}>
+              <TextField data-tour="settings-advice" select label="Advice from the machine" value={form.adviceEveryMin ?? 60} onChange={(e) => setForm({ ...form, adviceEveryMin: Number(e.target.value) })} sx={{ maxWidth: 360 }}>
                 {EVERY.map(([v, l]) => <MenuItem key={v} value={v}>{l}</MenuItem>)}
               </TextField>
               <Typography variant="caption" color="text.secondary">

@@ -55,14 +55,14 @@ export default function MachineDetail() {
   return (
     <>
       <Link component={RouterLink} to="/monitoring" underline="hover" sx={{ display: 'inline-block', mb: 1, fontWeight: 600 }}>← Monitoring</Link>
-      <PageHeader overline={[m.line, m.area].filter(Boolean).join(' · ').toUpperCase() || 'MACHINE'} title={`${m.code} · ${m.name}`}>
+      <PageHeader overline={[m.line, m.area].filter(Boolean).join(' · ').toUpperCase() || 'MACHINE'} title={`${m.code} · ${m.name}`} tour="detail">
         <Stack alignItems={{ sm: 'flex-end' }} gap={0.5}>
           <StatusChip status={m.status} />
           <ShiftLine live={live} />
         </Stack>
       </PageHeader>
 
-      <Tabs value={tab} onChange={(e, v) => setTab(v)} variant="scrollable" sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}>
+      <Tabs data-tour="detail-tabs" value={tab} onChange={(e, v) => setTab(v)} variant="scrollable" sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}>
         <Tab label="Live" />
         <Tab label="OEE history" />
         <Tab label="Downtime & AI analysis" />
@@ -71,7 +71,7 @@ export default function MachineDetail() {
       </Tabs>
 
       {tab > 0 && tab < 3 && (
-        <Card sx={{ mb: 3 }}>
+        <Card sx={{ mb: 3 }} data-tour="detail-range">
           <CardContent>
             <Stack direction="row" flexWrap="wrap" gap={2} alignItems="center">
               <TextField select size="small" label="Period" value={f.preset} onChange={(e) => pickPreset(e.target.value)} sx={{ minWidth: 170 }}>
@@ -108,10 +108,10 @@ export default function MachineDetail() {
 function LiveTab({ m, master, live }) {
   return (
     <Stack spacing={2}>
-      <KpiRow values={m} targets={m.targets} overline="THIS SHIFT" />
+      <Box data-tour="detail-kpi"><KpiRow values={m} targets={m.targets} overline="THIS SHIFT" /></Box>
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, lg: 8 }}>
-          <Card sx={{ height: '100%' }}>
+          <Card sx={{ height: '100%' }} data-tour="detail-sensors">
             <CardContent>
               <Typography variant="h6" component="h2">Sensors · {SETUP_TEXT[m.setup]?.label} setup</Typography>
               <Typography variant="body2" color="text.secondary" mb={1}>
@@ -120,7 +120,7 @@ function LiveTab({ m, master, live }) {
               <SensorTable m={m} master={master} />
               {m.setup === 'essential' && (
                 <Box mt={2}>
-                  <Typography variant="body2" color="text.secondary" mb={1}>No vision camera on this press: log the NC pieces you find so Quality is right.</Typography>
+                  <Typography variant="body2" color="text.secondary" mb={1}>No vision camera on this machine: log the NC pieces you find so Quality is right.</Typography>
                   <NcEntry machineId={m.id} />
                 </Box>
               )}

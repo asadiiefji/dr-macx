@@ -12,6 +12,8 @@ import { startBrain } from './brain.js';
 import { cycleRoutes } from './cycle.js';
 import { handoverRoutes } from './handover.js';
 import { LANGUAGES } from './ai.js';
+import { ingest } from './kepware.js';
+import { timingSafeEqual } from 'node:crypto';
 
 const db = new Firestore({ ignoreUndefinedProperties: true });
 const live = startLive(db);
@@ -27,6 +29,17 @@ app.get('/api/sensors', (req, res) => res.json({ setups: SETUPS, frames: FRAMES,
 
 // Which Google AI models are active, how they are reached, and how their last call went (sidebar).
 app.get('/api/ai', (req, res) => res.json(aiStatus()));
+
+// Tag values from the plant's Kepware IoT Gateway (REST client agent on the edge PC), sent every second with the
+// header "Authorization: Bearer <KEPWARE_TOKEN>". Without KEPWARE_TOKEN set, nothing is accepted.
+app.post('/api/kepware/ingest', (req, res) => {
+  const token = Buffer.from(process.env.KEPWARE_TOKEN ?? '');
+  const got = Buffer.from(req.get('authorization')?.replace(/^Bearer /, '') ?? '');
+  if (!token.length || got.length !== token.length || !timingSafeEqual(got, token)) return res.status(401).json({ error: 'Unauthorized.' });
+  const kept = ingest(req.body);
+  if (kept === null) return res.status(400).json({ error: 'Expected Kepware IoT Gateway JSON: { values: [{ id, v, q, t }] }.' });
+  res.json({ kept });
+});
 
 // --- OEE calculation settings: targets + planned breaks ---
 app.get('/api/settings', (req, res) => res.json(live.settings()));
@@ -264,8 +277,8 @@ app.post('/api/machines/:id/nc', async (req, res) => {
   const ref = db.doc(`machines/${req.params.id}`);
   const machine = await ref.get();
   if (!machine.exists) return res.status(404).json({ error: 'Machine not found.' });
-  if (machine.data().setup === 'premium') return res.status(400).json({ error: 'This press counts NC with its vision camera.' });
-  if (!live.addNc(req.params.id, count)) return res.status(409).json({ error: 'The press is not being monitored yet. Try again in a few seconds.' });
+  if (machine.data().setup === 'premium') return res.status(400).json({ error: 'This machine counts NC with its vision camera.' });
+  if (!live.addNc(req.params.id, count)) return res.status(409).json({ error: 'The machine is not being monitored yet. Try again in a few seconds.' });
   await ref.collection('nc').add({ at: Date.now(), count, operatorId });
   res.status(201).json({ count });
 });

@@ -79,9 +79,9 @@ export function soulRoutes(app, { db, live, list, resolve, eventsSince, repeatWi
   app.post('/api/soul/verify', async (req, res) => {
     const { machineId } = req.body ?? {};
     const code = typeof req.body?.code === 'string' ? req.body.code.trim().toUpperCase() : '';
-    if (typeof machineId !== 'string' || !machineId || !code) return res.status(400).json({ error: 'Pick a press and enter your employee number.' });
+    if (typeof machineId !== 'string' || !machineId || !code) return res.status(400).json({ error: 'Pick a machine and enter your employee number.' });
     const machine = await db.doc(`machines/${machineId}`).get();
-    if (!machine.exists || machine.data().active === false) return res.status(404).json({ error: 'This press is not active in Dr. Macx.' });
+    if (!machine.exists || machine.data().active === false) return res.status(404).json({ error: 'This machine is not active in Dr. Macx.' });
     const ops = await db.collection('operators').where('code', '==', code).get();
     const op = ops.docs[0];
     if (!op || op.data().active === false) return res.status(403).json({ error: `Employee number ${code} is not an active operator.` });

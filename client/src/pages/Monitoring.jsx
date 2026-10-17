@@ -30,7 +30,7 @@ function MachineCard({ m, now }) {
   const off = m.status === 'disconnected' || m.status === 'inactive';
   const k = level(m.oee, m.targets.oee);
   return (
-    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', opacity: off ? 0.8 : 1, borderTop: `4px solid ${k ? LEVELS[k].bar : C.line}` }}>
+    <Card data-tour="mon-card" sx={{ height: '100%', display: 'flex', flexDirection: 'column', opacity: off ? 0.8 : 1, borderTop: `4px solid ${k ? LEVELS[k].bar : C.line}` }}>
       <CardActionArea component={RouterLink} to={`/monitoring/${m.id}`} sx={{ flex: 1, alignItems: 'stretch' }}>
         <CardContent>
           <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
@@ -52,7 +52,7 @@ function MachineCard({ m, now }) {
           <Typography variant="body2" color="text.secondary" mt={1}>
             {m.status === 'running' && `Running for ${duration(now - m.since)}`}
             {m.status === 'stopped' && <>Alarm <Mono fontWeight={700} color="#B23C00">{m.tags.alarmCode || 'none'}</Mono> · stopped for {duration(now - m.since)}</>}
-            {m.status === 'disconnected' && 'No data. Check the Kepware endpoint and tags.'}
+            {m.status === 'disconnected' && 'No data from Kepware. Check the tag addresses in Master data › Machines.'}
             {m.status === 'inactive' && 'Monitoring is switched off for this machine.'}
             {m.status === 'break' && `Planned break · ${duration(now - m.since)}`}
           </Typography>
@@ -74,7 +74,7 @@ function MachineCard({ m, now }) {
       </CardActionArea>
 
       <CardActions sx={{ px: 2, pb: 2, pt: 1.5, borderTop: `1px solid ${C.line}` }}>
-        <Button fullWidth variant="outlined" startIcon={<HistoryIcon />} component={RouterLink} to={`/monitoring/${m.id}?tab=history`}>History analysis</Button>
+        <Button data-tour="mon-history" fullWidth variant="outlined" startIcon={<HistoryIcon />} component={RouterLink} to={`/monitoring/${m.id}?tab=history`}>History analysis</Button>
       </CardActions>
     </Card>
   );

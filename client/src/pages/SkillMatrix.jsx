@@ -22,13 +22,13 @@ export default function SkillMatrix() {
     <>
       <PageHeader overline="MASTER DATA" title="Skill matrix" tour="skills" />
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-      <Stack direction="row" flexWrap="wrap" gap={1} mb={2}>
+      <Stack direction="row" flexWrap="wrap" gap={1} mb={2} data-tour="skills-legend">
         {SKILLS.map((s) => <SkillChip key={s.level} level={s.level} />)}
       </Stack>
       {!ms.length || !os.length ? (
         <Typography color="text.secondary">Add machines and operators first. The matrix shows every operator against every machine.</Typography>
       ) : (
-        <TableContainer component={Card}>
+        <TableContainer component={Card} data-tour="skills-table">
           <Table size="small" sx={{ minWidth: 200 + ms.length * 170 }}>
             <TableHead>
               <TableRow>

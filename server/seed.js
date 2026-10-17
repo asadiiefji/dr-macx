@@ -8,32 +8,29 @@ import { schemas, parseSettings, DEFAULT_TARGETS } from './validate.js';
 import { currentShift, dayStart, onBreak, breakIn } from './oee.js';
 import { newDummy, dummyStep } from './dummy.js';
 import { newRecorder, record } from './recorder.js';
-import { defaultTags, pressDefaults, toOeeTags } from './sensors.js';
+import { pressDefaults, toOeeTags } from './sensors.js';
 import { minuteOf, newMinute, addReading, minuteRow } from './telemetry.js';
 import { bqEnabled, insertRows, query } from './bq.js';
 
 // Four stamping presses: Premium and Essential sensor sets, straight-side and C-frame.
-const press = (m) => ({ ...m, sensorTags: defaultTags(pressDefaults(m), 'Channel1', m.kepware.device), targets: DEFAULT_TARGETS });
+// The Kepware connection (endpoint, channel, device, tags) starts empty: it is filled in when the plant is connected.
+const press = (m) => ({ ...m, kepware: { endpoint: '', channel: '', device: '' }, sensorTags: {}, targets: DEFAULT_TARGETS });
 const machines = {
   'prs-03': press({
-    code: 'PRS-03', name: 'Press 03 · 400T straight-side', line: 'Line 2', area: 'Stamping', idealCycleTime: 6, source: 'dummy',
+    code: 'PRS-03', name: 'Machine 03 · 400T straight-side', line: 'Line 2', area: 'Stamping', idealCycleTime: 6, source: 'dummy',
     setup: 'premium', frameType: 'straight-side', ratedTonnage: 400, nodes: 4, nodeTolerancePct: 5,
-    kepware: { endpoint: 'opc.tcp://192.168.1.10:49320', channel: 'Channel1', device: 'Press03' },
   }),
   'prs-05': press({
-    code: 'PRS-05', name: 'Press 05 · JH21-160 C-frame', line: 'Line 3', area: 'Stamping', idealCycleTime: 2.5, source: 'dummy',
+    code: 'PRS-05', name: 'Machine 05 · JH21-160 C-frame', line: 'Line 3', area: 'Stamping', idealCycleTime: 2.5, source: 'dummy',
     setup: 'essential', frameType: 'c-frame', ratedTonnage: 160, nodes: 2, nodeTolerancePct: 5,
-    kepware: { endpoint: 'opc.tcp://192.168.1.11:49320', channel: 'Channel1', device: 'Press05' },
   }),
   'prs-07': press({
-    code: 'PRS-07', name: 'Press 07 · 250T straight-side', line: 'Line 1', area: 'Stamping', idealCycleTime: 4, source: 'dummy',
+    code: 'PRS-07', name: 'Machine 07 · 250T straight-side', line: 'Line 1', area: 'Stamping', idealCycleTime: 4, source: 'dummy',
     setup: 'premium', frameType: 'straight-side', ratedTonnage: 250, nodes: 4, nodeTolerancePct: 5,
-    kepware: { endpoint: 'opc.tcp://192.168.1.12:49320', channel: 'Channel1', device: 'Press07' },
   }),
   'prs-09': press({
-    code: 'PRS-09', name: 'Press 09 · JH21-110 C-frame', line: 'Line 3', area: 'Stamping', idealCycleTime: 2, source: 'dummy',
+    code: 'PRS-09', name: 'Machine 09 · JH21-110 C-frame', line: 'Line 3', area: 'Stamping', idealCycleTime: 2, source: 'dummy',
     setup: 'essential', frameType: 'c-frame', ratedTonnage: 110, nodes: 2, nodeTolerancePct: 5,
-    kepware: { endpoint: 'opc.tcp://192.168.1.13:49320', channel: 'Channel1', device: 'Press09' },
   }),
 };
 

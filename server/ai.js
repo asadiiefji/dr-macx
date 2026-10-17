@@ -196,10 +196,10 @@ export async function chat(context, messages) {
 
 // --- Machine Soul: the press speaks for itself, in the kiosk's language ---
 
-const soulVoice = (lang) => `You are the soul of one stamping press, speaking to the operator standing next to it.
+const soulVoice = (lang) => `You are the soul of one stamping machine (a press), speaking to the operator standing next to it. Call yourself "the machine", never "the press".
 Speak in first person ("I", "my node 2", "my motor"), warm and calm, like a colleague. Write in ${LANGUAGES[lang] ?? 'English'}.
 Use only the data given; quote real numbers (tonnage per node vs nominal, vibration, temperatures, counts, times).
-Never invent sensors the press does not have: an Essential press only knows its part count, motor current and PLC alarm.
+Never invent sensors the machine does not have: an Essential machine only knows its part count, motor current and PLC alarm.
 "sensorStatus" says ok / warn / alarm per sensor; tonnage nodes are judged against nominal ± tolerance.
 "say" is spoken aloud by text-to-speech: 2-4 short sentences, plain text, no lists, no symbols that read badly aloud.`;
 
@@ -210,7 +210,7 @@ const ASK_SCHEMA = {
     findings: {
       type: 'array',
       description: 'What the sensors and history show (max 4).',
-      items: { type: 'object', properties: { part: { type: 'string', description: 'Press part, e.g. "tonnage node 2", "main motor", "lube line"' }, finding: { type: 'string' } }, required: ['part', 'finding'] },
+      items: { type: 'object', properties: { part: { type: 'string', description: 'Machine part, e.g. "tonnage node 2", "main motor", "lube line"' }, finding: { type: 'string' } }, required: ['part', 'finding'] },
     },
     actions: { type: 'array', items: { type: 'string' }, description: 'Concrete next steps for the operator or maintenance (max 4).' },
     part: { type: 'string', description: 'Anatomy part id most involved: motor, gearbox, lubeLine, loadCell, camera, microphone, ioModule, exitChute, controlPanel, or empty.' },
@@ -263,7 +263,7 @@ export async function soulExplain(context, statement, lang) {
 // or the kiosk's user-interface labels (ui: buttons, titles, menus, short notes).
 const TRANSLATE = {
   speech: 'Keep the first-person voice of a machine talking to its operator.',
-  ui: 'These are user-interface labels of an industrial OEE monitoring kiosk next to a stamping press (titles, buttons, menu items, chips, short notes). Translate concisely in the usual shop-floor wording; keep each label about as short as the English. Keep every {placeholder} in curly braces exactly as written.',
+  ui: 'These are user-interface labels of an industrial OEE monitoring kiosk next to a stamping machine (titles, buttons, menu items, chips, short notes). Translate concisely in the usual shop-floor wording; keep each label about as short as the English. Keep every {placeholder} in curly braces exactly as written.',
 };
 export async function translateTexts(texts, lang, kind = 'speech') {
   if (!texts.length) return [];
@@ -294,7 +294,7 @@ export async function handoverSummary(facts) {
     model: MODEL,
     contents: JSON.stringify(facts),
     config: {
-      systemInstruction: 'You advise the incoming shift of a stamping press. From the summary and losses given, write at most 3 short, concrete pieces of advice in English. Do not write any numbers; do not restate the summary.',
+      systemInstruction: 'You advise the incoming shift of a stamping machine. From the summary and losses given, write at most 3 short, concrete pieces of advice in English. Do not write any numbers; do not restate the summary.',
       responseMimeType: 'application/json',
       responseJsonSchema: HANDOVER_SCHEMA,
       temperature: 0.3,
@@ -309,7 +309,7 @@ export async function soulOptions(context, lang) {
     model: MODEL,
     contents: JSON.stringify(context),
     config: {
-      systemInstruction: `You help a stamping-press operator explain what happened this shift with one tap. From the data (stops this shift and their reasons, alarms, sensor warnings, output against plan), list up to 5 things that most likely happened, written as the operator would say them: short (at most 7 words), concrete, no numbers, most likely first. Write them in ${LANGUAGES[lang] ?? 'English'}.`,
+      systemInstruction: `You help a stamping-machine operator explain what happened this shift with one tap. From the data (stops this shift and their reasons, alarms, sensor warnings, output against plan), list up to 5 things that most likely happened, written as the operator would say them: short (at most 7 words), concrete, no numbers, most likely first. Write them in ${LANGUAGES[lang] ?? 'English'}.`,
       responseMimeType: 'application/json',
       responseJsonSchema: { type: 'object', properties: { options: { type: 'array', items: { type: 'string' } } }, required: ['options'] },
       temperature: 0.3,
@@ -328,7 +328,7 @@ export async function soulChat(context, messages, lang) {
       ...messages.map((m) => ({ role: m.role, parts: [{ text: m.text }] })),
     ],
     config: {
-      systemInstruction: `${soulVoice(lang)}\nThe operator chats with you in the kiosk. Answer their question about you (the press): what is happening, why, what to do. Quote only numbers from the data (shiftForecast for shift totals). If the data cannot answer, say what is missing. At most about 90 words, plain text, short sentences.`,
+      systemInstruction: `${soulVoice(lang)}\nThe operator chats with you in the kiosk. Answer their question about you (the machine): what is happening, why, what to do. Quote only numbers from the data (shiftForecast for shift totals). If the data cannot answer, say what is missing. At most about 90 words, plain text, short sentences.`,
       temperature: 0.4,
     },
   }));

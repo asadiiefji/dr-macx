@@ -40,7 +40,7 @@ export function PageHeader({ overline, title, tour, children }) {
         <Typography variant="overline" component="div">{overline}</Typography>
         <Typography variant="h4" component="h1">{title}</Typography>
       </Box>
-      <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
+      <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap" data-tour="page-actions">
         {children}
         {tour && <TourButton id={tour} />}
       </Stack>

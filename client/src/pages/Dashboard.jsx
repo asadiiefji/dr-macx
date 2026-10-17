@@ -63,11 +63,11 @@ export default function Dashboard() {
         </Alert>
       )}
 
-      <Box mb={2}><KpiRow values={plant} overline="PLANT · THIS SHIFT" /></Box>
+      <Box mb={2} data-tour="dash-kpi"><KpiRow values={plant} overline="PLANT · THIS SHIFT" /></Box>
 
       <Grid container spacing={2} mb={2}>
         <Grid size={{ xs: 12, md: 6 }}>
-          <Card sx={{ height: '100%' }}>
+          <Card sx={{ height: '100%' }} data-tour="dash-status">
             <CardContent>
               <Typography variant="h6" component="h2" mb={2}>Machine status</Typography>
               <Grid container spacing={2}>
@@ -82,7 +82,7 @@ export default function Dashboard() {
           </Card>
         </Grid>
         <Grid size={{ xs: 12, md: 6 }}>
-          <Card sx={{ height: '100%' }}>
+          <Card sx={{ height: '100%' }} data-tour="dash-output">
             <CardContent>
               <Typography variant="h6" component="h2" mb={2}>Output · this shift</Typography>
               <Stack direction="row" spacing={4} flexWrap="wrap">
@@ -100,7 +100,7 @@ export default function Dashboard() {
 
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, lg: 8 }}>
-          <Card>
+          <Card data-tour="dash-ranking">
             <CardContent>
               <Typography variant="h6" component="h2">OEE by machine</Typography>
               <Typography variant="body2" color="text.secondary" mb={2}>Lowest first — where to look now.</Typography>
@@ -128,7 +128,7 @@ export default function Dashboard() {
           </Card>
         </Grid>
         <Grid size={{ xs: 12, lg: 4 }}>
-          <Card>
+          <Card data-tour="dash-stopped">
             <CardContent>
               <Typography variant="h6" component="h2" mb={2}>Stopped now</Typography>
               {!stopped.length && <Typography color="text.secondary">No machine is stopped.</Typography>}

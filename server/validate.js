@@ -64,7 +64,6 @@ function machine(b) {
   if (!(value.motorFla >= 1 && value.motorFla <= 2000)) return { error: 'Motor full-load current must be 1–2000 A.' };
   const tagIds = Object.keys(value.sensorTags);
   if (value.source === 'kepware') {
-    if (!value.kepware.endpoint) return { error: 'Kepware endpoint is required for a PLC source.' };
     if (tagIds.some((k) => !value.sensorTags[k])) return { error: 'Every sensor needs its PLC tag address for a Kepware source.' };
   }
   const badTarget = FACTOR_KEYS.find((k) => {
