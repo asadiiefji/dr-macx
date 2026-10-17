@@ -1,6 +1,6 @@
 // The Machine Soul: a kiosk next to each press where the press speaks for itself.
 // Messages live in machines/{id}/soul: { at, kind, text, lang, emotion, data, i18n, needsAnswer, answered }.
-import { soulAsk, soulExplain, translateTexts, explain, LANGUAGES } from './ai.js';
+import { soulAsk, soulExplain, soulOptions, soulChat, translateTexts, explain, LANGUAGES } from './ai.js';
 import { speak } from './tts.js';
 import { hourlyTrend } from './bq.js';
 import { nodeNominal, pressDefaults } from './sensors.js';
@@ -171,6 +171,40 @@ export function soulRoutes(app, { db, live, list, resolve, eventsSince, repeatWi
       res.json(Object.fromEntries(texts.map((x) => [x, uiCache.get(key(x)) ?? x])));
     } catch (e) {
       fail(res, 'translate the screen')(e);
+    }
+  });
+
+  // Tap options for "Explain by voice or text": what Gemini thinks most likely happened (cached 2 min per press).
+  const optionCache = new Map();
+  app.post('/api/machines/:id/soul/options', async (req, res) => {
+    const lang = langOf(req.body?.lang);
+    const key = `${req.params.id}:${lang}`;
+    const hit = optionCache.get(key);
+    if (hit && Date.now() - hit.at < 120e3) return res.json({ options: hit.options });
+    const ctx = await context(req.params.id);
+    if (!ctx) return res.status(404).json({ error: 'Machine not found.' });
+    try {
+      const options = await soulOptions(ctx, lang);
+      optionCache.set(key, { at: Date.now(), options });
+      res.json({ options });
+    } catch (e) {
+      fail(res, 'suggest answers')(e);
+    }
+  });
+
+  // The kiosk chat with the press (Gemini, grounded in the same context as "Ask Dr. Macx").
+  app.post('/api/machines/:id/soul/chat', async (req, res) => {
+    const lang = langOf(req.body?.lang);
+    const msgs = req.body?.messages;
+    const ok = Array.isArray(msgs) && msgs.length && msgs.length <= 30 && msgs.at(-1).role === 'user' &&
+      msgs.every((m) => ['user', 'model'].includes(m?.role) && typeof m.text === 'string' && m.text.trim() && m.text.length <= 2000);
+    if (!ok) return res.status(400).json({ error: 'Send up to 30 messages, the last one from you.' });
+    const ctx = await context(req.params.id);
+    if (!ctx) return res.status(404).json({ error: 'Machine not found.' });
+    try {
+      res.json({ text: await soulChat(ctx, msgs, lang) });
+    } catch (e) {
+      fail(res, 'answer')(e);
     }
   });
 

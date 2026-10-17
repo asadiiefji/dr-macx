@@ -97,7 +97,7 @@ export default function MachineDetail() {
 
       {tab === 0 && <LiveTab m={m} master={master} live={live} />}
       {tab === 1 && !badRange && <History id={id} range={range} onShift={(shift) => setF({ ...f, shift })} />}
-      {tab === 3 && <Anatomy m={m} title={`${m.code} anatomy`} height={560} />}
+      {tab === 3 && <Anatomy m={m} title={`${m.code} anatomy`} height={440} />}
       {tab === 4 && <Handovers machineId={id} limit={20} />}
       {tab === 2 && !badRange && <Downtime id={id} code={m.code} range={range} />}
     </>

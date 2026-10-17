@@ -211,19 +211,20 @@ export const Framed = ({ children, sx }) => <Box sx={{ border: `1px solid ${C.li
 // A popup at a common size, padded from the screen edge; closes on Esc or a click outside.
 // size: third (a list, about 1/3 of the screen), half (one subject), wide (details with the anatomy beside them).
 const WIDTH = { third: { md: '34vw' }, half: { md: '50vw' }, wide: { md: '68vw' } };
-export function Popup({ open, onClose, title, actions, size = 'third', children }) {
+// fill: the popup takes the available height and its content does its own scrolling (e.g. two columns that scroll apart).
+export function Popup({ open, onClose, title, actions, size = 'third', fill, children }) {
   const t = useT();
   return (
     <Dialog
       open={open} onClose={onClose} maxWidth={false}
-      slotProps={{ paper: { sx: { width: { xs: 'calc(100% - 24px)', ...WIDTH[size] }, minWidth: { md: size === 'third' ? 440 : 560 }, m: { xs: 1.5, md: 4 }, maxHeight: { xs: 'calc(100% - 24px)', md: 'calc(100% - 96px)' }, borderRadius: '12px' } } }}
+      slotProps={{ paper: { sx: { width: { xs: 'calc(100% - 24px)', ...WIDTH[size] }, minWidth: { md: size === 'third' ? 440 : 560 }, m: { xs: 1.5, md: 4 }, maxHeight: { xs: 'calc(100% - 24px)', md: 'calc(100% - 96px)' }, ...(fill && { height: { md: 'calc(100% - 96px)' } }), borderRadius: '12px' } } }}
     >
       <Stack direction="row" alignItems="center" gap={1.5} sx={{ px: { xs: 2, md: 3 }, py: 1.25, borderBottom: 1, borderColor: 'divider' }}>
         <Typography fontWeight={700} fontSize={18} component="h2" flex={1}>{title}</Typography>
         {actions}
         <IconButton aria-label={t('Close')} onClick={onClose} sx={{ border: 1, borderColor: 'divider', width: 36, height: 36 }}><CloseIcon fontSize="small" /></IconButton>
       </Stack>
-      <DialogContent sx={{ p: { xs: 2, md: 3 } }}>{children}</DialogContent>
+      <DialogContent sx={{ p: { xs: 2, md: 3 }, ...(fill && { overflow: { md: 'hidden' }, display: 'flex', flexDirection: 'column' }) }}>{children}</DialogContent>
     </Dialog>
   );
 }
@@ -304,7 +305,11 @@ export function EventDetail({ e, row, sensors, reasons, operator, lang, onClose,
           )}
         </Stack>
         {side && (
-          <Anatomy m={row} lit={e.part ? { part: e.part, node: e.node ?? null } : undefined} title={t(e.part ? 'Where it is' : 'My anatomy')} height={480} />
+          <Anatomy
+            m={row} title={t(e.part ? 'Where it is' : 'My anatomy')} height={340}
+            lit={e.part ? { part: e.part, node: e.node ?? null } : undefined}
+            fault={e.part && (e.stop || e.kind === 'stopDone' || e.kind === 'anomaly') ? { part: e.part, node: e.node ?? null } : undefined}
+          />
         )}
       </Box>
     </Popup>
@@ -383,7 +388,7 @@ export function AnatomyTab({ row, sensors, lit, onClear, events, onOpen }) {
   const related = target ? events.filter((e) => e.part === target.part && (!target.node || e.node === target.node)).slice(0, 3) : [];
   return (
     <Stack spacing={1}>
-      <Anatomy m={row} lit={lit ?? undefined} title={t('My anatomy')} height={320} />
+      <Anatomy m={row} lit={lit ?? undefined} title={t('My anatomy')} height={240} />
       {lit && <Button size="small" onClick={onClear} sx={{ alignSelf: 'flex-start' }}>{t('Back to my live problem part')}</Button>}
       <Box sx={{ p: 1.25, borderRadius: '8px', border: 1, borderColor: C.line }}>
         <Typography variant="overline" color="text.secondary">{t(lit ? 'Selected part' : 'Problem part')}</Typography>

@@ -302,3 +302,35 @@ export async function handoverSummary(facts) {
   }));
   return JSON.parse(res.text);
 }
+
+// Tap options for "explain": what most likely happened, as the operator would say it, from the press's data.
+export async function soulOptions(context, lang) {
+  const res = await track('gemini', () => gemini().models.generateContent({
+    model: MODEL,
+    contents: JSON.stringify(context),
+    config: {
+      systemInstruction: `You help a stamping-press operator explain what happened this shift with one tap. From the data (stops this shift and their reasons, alarms, sensor warnings, output against plan), list up to 5 things that most likely happened, written as the operator would say them: short (at most 7 words), concrete, no numbers, most likely first. Write them in ${LANGUAGES[lang] ?? 'English'}.`,
+      responseMimeType: 'application/json',
+      responseJsonSchema: { type: 'object', properties: { options: { type: 'array', items: { type: 'string' } } }, required: ['options'] },
+      temperature: 0.3,
+    },
+  }));
+  return (JSON.parse(res.text).options ?? []).slice(0, 5);
+}
+
+// The kiosk chat: the operator asks the press about itself; it answers in first person from its live data.
+export async function soulChat(context, messages, lang) {
+  const res = await track('gemini', () => gemini().models.generateContent({
+    model: MODEL,
+    contents: [
+      { role: 'user', parts: [{ text: `My data right now (JSON):\n${JSON.stringify(context)}` }] },
+      { role: 'model', parts: [{ text: 'Understood. I will answer from this data.' }] },
+      ...messages.map((m) => ({ role: m.role, parts: [{ text: m.text }] })),
+    ],
+    config: {
+      systemInstruction: `${soulVoice(lang)}\nThe operator chats with you in the kiosk. Answer their question about you (the press): what is happening, why, what to do. Quote only numbers from the data (shiftForecast for shift totals). If the data cannot answer, say what is missing. At most about 90 words, plain text, short sentences.`,
+      temperature: 0.4,
+    },
+  }));
+  return res.text;
+}

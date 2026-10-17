@@ -99,46 +99,51 @@ export function StopForm({ machineId, event, reasons, onSaved, operatorId, lang:
     }
   };
   const r = ai.result;
+  const ctl = { minHeight: 36, py: 0, borderRadius: '8px' }; // compact controls, same height in a row
   return (
-    <Stack spacing={1.5}>
-      <Stack direction="row" flexWrap="wrap" alignItems="center" gap={1}>
-        <Typography fontWeight={700}>{fmtTime(event.start)}</Typography>
-        <Typography color="text.secondary">· {event.end ? duration(event.end - event.start) : t('still stopped')}</Typography>
-        <Typography color="text.secondary">· {t('alarm')} <Mono fontWeight={700}>{event.alarmCode || t('none')}</Mono></Typography>
+    <Stack spacing={1.25}>
+      <Stack direction="row" flexWrap="wrap" alignItems="center" columnGap={1} rowGap={0.5}>
+        <Typography variant="body2" fontWeight={700}>{fmtTime(event.start)}</Typography>
+        <Typography variant="body2" color="text.secondary">· {event.end ? duration(event.end - event.start) : t('still stopped')}</Typography>
+        <Typography variant="body2" color="text.secondary">· {t('alarm')} <Mono fontWeight={700}>{event.alarmCode || t('none')}</Mono></Typography>
         {event.breakAllowed && <Chip size="small" label={t('At a scheduled break')} sx={{ bgcolor: '#E1F5FE', color: '#01579B' }} />}
         <RepeatChip event={event} />
       </Stack>
 
-      {/* Operator note by voice or text, any language: Gemini translates it and suggests the reason. */}
-      <Box sx={{ p: 1.5, borderRadius: 3, bgcolor: '#F8FAFC', border: `1px solid ${C.line}` }}>
-        <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems={{ sm: 'flex-start' }}>
-          <TextField
-            size="small"
-            label={t('Operator note (speak or type, any language)')}
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            multiline
-            maxRows={4}
-            slotProps={{ htmlInput: { maxLength: 1000 } }}
-            sx={{ flex: 1 }}
-          />
+      {/* Operator note by voice or text, any language: Gemini translates it and suggests the reason.
+          The note takes the full width; language, mic and the Gemini button sit in one row below it. */}
+      <Box sx={{ p: 1.25, borderRadius: '8px', bgcolor: '#F8FAFC', border: `1px solid ${C.line}` }}>
+        <TextField
+          size="small"
+          fullWidth
+          label={t('Operator note (speak or type, any language)')}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          multiline
+          minRows={2}
+          maxRows={4}
+          slotProps={{ htmlInput: { maxLength: 1000 } }}
+          sx={{ bgcolor: '#FFFFFF' }}
+        />
+        <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap" mt={1}>
           {dictation.supported && (
             <>
-              <TextField select size="small" label={t('Spoken language')} value={lang} onChange={(e) => setLang(e.target.value)} sx={{ minWidth: 160 }} disabled={dictation.listening}>
+              <TextField select size="small" label={t('Spoken language')} value={lang} onChange={(e) => setLang(e.target.value)} disabled={dictation.listening} sx={{ minWidth: 150, bgcolor: '#FFFFFF' }}>
                 {LANGS.map(([v, l]) => <MenuItem key={v} value={v}>{l}</MenuItem>)}
               </TextField>
               <Tooltip title={t(dictation.listening ? 'Stop recording' : 'Record the operator')}>
                 <IconButton
                   aria-label={t(dictation.listening ? 'Stop recording' : 'Record the operator')}
                   onClick={dictation.listening ? dictation.stop : dictation.start}
-                  sx={{ border: `1px solid ${C.line}`, color: dictation.listening ? 'error.main' : 'primary.main', width: 44, height: 40 }}
+                  sx={{ border: `1px solid ${C.line}`, borderRadius: '8px', bgcolor: '#FFFFFF', color: dictation.listening ? 'error.main' : 'primary.main', width: 40, height: 40 }}
                 >
-                  {dictation.listening ? <StopIcon /> : <MicIcon />}
+                  {dictation.listening ? <StopIcon fontSize="small" /> : <MicIcon fontSize="small" />}
                 </IconButton>
               </Tooltip>
             </>
           )}
-          <Button variant="outlined" startIcon={ai.loading ? <CircularProgress size={16} /> : <AiIcon />} onClick={suggest} disabled={ai.loading} sx={{ flex: 'none' }}>
+          <Box flex={1} />
+          <Button size="small" variant="outlined" startIcon={ai.loading ? <CircularProgress size={14} /> : <AiIcon fontSize="small" />} onClick={suggest} disabled={ai.loading} sx={{ ...ctl, bgcolor: '#FFFFFF' }}>
             {t('Suggest with Gemini')}
           </Button>
         </Stack>
@@ -162,7 +167,7 @@ export function StopForm({ machineId, event, reasons, onSaved, operatorId, lang:
       </Box>
 
       {error && <Alert severity="error">{error}</Alert>}
-      <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.5} alignItems={{ sm: 'flex-start' }}>
+      <Stack direction="row" gap={1} alignItems="flex-start" flexWrap="wrap">
         <TextField
           select
           size="small"
@@ -171,13 +176,13 @@ export function StopForm({ machineId, event, reasons, onSaved, operatorId, lang:
           onChange={(e) => setCode(e.target.value)}
           helperText={chosen ? t(chosen.type === 'planned' ? 'Planned: excluded from OEE.' : 'Unplanned: counts as a loss in OEE.') : event.suggested ? t('Suggested from the PLC alarm.') : ' '}
           slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
-          sx={{ flex: 2 }}
+          sx={{ flex: '2 1 240px', minWidth: 0 }}
         >
           <MenuItem value="" disabled>{t('Pick a reason')}</MenuItem>
           {reasonItems(reasons, event, t)}
         </TextField>
-        <TextField size="small" label={t('Comment (English)')} value={comment} onChange={(e) => setComment(e.target.value)} slotProps={{ htmlInput: { maxLength: 500 } }} sx={{ flex: 2 }} />
-        <Button variant="contained" onClick={save} disabled={!code || saving} sx={{ flex: 'none' }}>{t('Confirm')}</Button>
+        <TextField size="small" label={t('Comment (English)')} value={comment} onChange={(e) => setComment(e.target.value)} slotProps={{ htmlInput: { maxLength: 500 } }} sx={{ flex: '1 1 160px', minWidth: 0 }} />
+        <Button variant="contained" onClick={save} disabled={!code || saving} sx={{ ...ctl, minHeight: 40, px: 2.5, flex: 'none', ml: 'auto' }}>{t('Confirm')}</Button>
       </Stack>
     </Stack>
   );

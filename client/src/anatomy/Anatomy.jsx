@@ -13,7 +13,8 @@ import { TONES, findPart, pressParts, worstPart } from './pressParts.js';
 
 const Press3D = lazy(() => import('./Press3D.jsx'));
 
-const ACCENT = '#F97316';
+const ACCENT = '#F97316'; // the part you hover or select
+const FAULT = '#DC2626'; // the sensor that raised the problem: stays red while you look at other parts
 const COS = Math.cos(Math.PI / 6);
 const S = 100; // px per metre
 const iso = ([x, y, z]) => [(x - z) * COS * S, ((x + z) * 0.5 - y) * S];
@@ -52,8 +53,8 @@ const ring = (axis, c, r, at) =>
   });
 
 // Draw one part (dy = vertical offset for moving parts).
-function Shape({ p, lit, dy }) {
-  const t = tones(lit ? ACCENT : TONES[p.tone]);
+function Shape({ p, color, dy }) {
+  const t = tones(color ?? TONES[p.tone]);
   const sw = 1.2;
   if (p.kind === 'box') {
     const [x0, y, z0] = p.pos;
@@ -85,8 +86,8 @@ function Shape({ p, lit, dy }) {
   const ends = [p.points[0], p.points.at(-1)].map(iso);
   return (
     <g>
-      <polyline points={pts(p.points)} fill="none" stroke={lit ? ACCENT : TONES[p.tone]} strokeWidth={lit ? 6 : 4} strokeLinecap="round" strokeLinejoin="round" />
-      {ends.map(([x, y], i) => <circle key={i} cx={x} cy={y} r={4} fill={lit ? ACCENT : TONES[p.tone]} />)}
+      <polyline points={pts(p.points)} fill="none" stroke={color ?? TONES[p.tone]} strokeWidth={color ? 6 : 4} strokeLinecap="round" strokeLinejoin="round" />
+      {ends.map(([x, y], i) => <circle key={i} cx={x} cy={y} r={4} fill={color ?? TONES[p.tone]} />)}
     </g>
   );
 }
@@ -99,7 +100,7 @@ const depth = (p) => {
 };
 const top = (p) => (p.kind === 'box' ? [p.pos[0] + p.size[0] / 2, p.pos[1] + p.size[1], p.pos[2] + p.size[2] / 2] : p.kind === 'line' ? p.points.at(-1) : [p.center[0], p.center[1] + (p.r ?? 0), p.center[2]]);
 
-function Drawing({ parts, litPart, running, reduced, onFocus, onPick }) {
+function Drawing({ parts, litPart, faultPart, running, reduced, onFocus, onPick }) {
   const [phase, setPhase] = useState(0);
   useEffect(() => {
     if (!running || reduced) return;
@@ -131,20 +132,26 @@ function Drawing({ parts, litPart, running, reduced, onFocus, onPick }) {
             onClick={() => sensorPart && onPick(p.id)}
             style={{ cursor: sensorPart ? 'pointer' : 'default' }}
           >
-            <Shape p={p} lit={litPart?.id === p.id} dy={p.moves ? dy : 0} />
+            <Shape p={p} color={colorOf(p, litPart, faultPart)} dy={p.moves ? dy : 0} />
           </g>
         );
       })}
-      {/* the lit part again on top, x-ray style, so a part at the back is never hidden */}
-      {litPart && (
+      {/* the problem part and the selected part again on top, x-ray style, so a part at the back is never hidden */}
+      {faultPart && (
+        <g opacity={0.92} pointerEvents="none" style={{ filter: 'drop-shadow(0 0 6px rgba(220,38,38,0.8))' }}>
+          <Shape p={faultPart} color={FAULT} dy={faultPart.moves ? dy : 0} />
+        </g>
+      )}
+      {litPart && litPart.id !== faultPart?.id && (
         <g opacity={0.92} pointerEvents="none" style={{ filter: 'drop-shadow(0 0 6px rgba(249,115,22,0.8))' }}>
-          <Shape p={litPart} lit dy={litPart.moves ? dy : 0} />
+          <Shape p={litPart} color={ACCENT} dy={litPart.moves ? dy : 0} />
         </g>
       )}
       {/* a dot on every part that carries a sensor, with a wide invisible ring so it is easy to hover, click or Tab to */}
       {parts.filter((p) => p.part).map((p) => {
         const [x, y] = iso(top(p));
         const lit = litPart?.id === p.id;
+        const color = colorOf(p, litPart, faultPart) ?? C.blue;
         return (
           <g
             key={`dot-${p.id}`} role="button" tabIndex={0} aria-label={p.name} aria-pressed={lit}
@@ -153,7 +160,7 @@ function Drawing({ parts, litPart, running, reduced, onFocus, onPick }) {
             style={{ cursor: 'pointer', outline: 'none' }}
           >
             <circle cx={x} cy={y - 8} r={18} fill="transparent" />
-            <circle cx={x} cy={y - 8} r={lit ? 8 : 6} fill={lit ? ACCENT : C.blue} stroke="#fff" strokeWidth={2} />
+            <circle cx={x} cy={y - 8} r={color === C.blue ? 6 : 8} fill={color} stroke="#fff" strokeWidth={2} />
           </g>
         );
       })}
@@ -162,8 +169,12 @@ function Drawing({ parts, litPart, running, reduced, onFocus, onPick }) {
 }
 
 const FRAME = { 'straight-side': 'Straight-side', 'c-frame': 'C-frame' };
+// red for the problem part (always), orange for the part being looked at, else the part's own tone
+const colorOf = (p, litPart, faultPart) => (p.id === faultPart?.id ? FAULT : p.id === litPart?.id ? ACCENT : null);
 
-export default function Anatomy({ m, lit, title = 'Press anatomy', number = 1, height = 420 }) {
+// lit = a part to point at (e.g. "View part"); fault = the sensor that raised the problem (red, stays while you
+// hover other parts; defaults to a sensor in alarm). height = the drawing's height: the text below adds to it.
+export default function Anatomy({ m, lit, fault, title = 'Press anatomy', number = 1, height = 320 }) {
   const t = useT();
   const catalog = useSensorCatalog();
   const reduced = useMediaQuery('(prefers-reduced-motion: reduce)');
@@ -174,7 +185,9 @@ export default function Anatomy({ m, lit, title = 'Press anatomy', number = 1, h
   const [tour, setTour] = useState(0);
   const parts = useMemo(() => pressParts(m), [m.frameType, m.nodes, m.setup]); // eslint-disable-line react-hooks/exhaustive-deps
   const sensors = sensorsFor(m, catalog);
-  const worst = lit ?? worstPart(m, sensors);
+  const live = worstPart(m, sensors);
+  const worst = lit ?? fault ?? live;
+  const faultRef = fault ?? (live?.state === 'alarm' ? live : null);
   const sensorParts = parts.filter((p) => p.part);
 
   useEffect(() => setPicked(null), [lit?.part, lit?.node]); // a new event to show: back to what it points at
@@ -187,15 +200,16 @@ export default function Anatomy({ m, lit, title = 'Press anatomy', number = 1, h
   }, [worst, hover, picked, reduced]);
 
   const chosen = hover ?? picked;
+  const faultPart = findPart(parts, faultRef);
   const litPart = chosen ? parts.find((p) => p.id === chosen) : findPart(parts, worst) ?? sensorParts[tour % Math.max(1, sensorParts.length)];
   const sensorsOn = (p) => sensors.filter((s) => (p.part === 'loadCell' ? s.node === p.node : s.part === p.part));
   const stateOf = (p) => sensorsOn(p).map((s) => m.sensorStatus?.[s.id]).sort((a, b) => ['alarm', 'warn'].indexOf(b) - ['alarm', 'warn'].indexOf(a))[0];
   const onPart = litPart && sensorsOn(litPart);
 
-  const alarmColor = worst && !chosen ? (worst.state === 'alarm' ? LEVELS.below.color : LEVELS.near.color) : C.ink;
+  const alarmColor = litPart && litPart.id === faultPart?.id ? FAULT : worst?.state === 'warn' && !chosen ? LEVELS.near.color : C.ink;
   // Header, drawing and readout are stacked (no text over the drawing), so every label stays readable.
   return (
-    <Card sx={{ height, p: 0, overflow: 'hidden', bgcolor: '#FBFDFF', display: 'flex', flexDirection: 'column', borderRadius: '12px' }} onMouseLeave={() => setHover(null)}>
+    <Card sx={{ p: 0, overflow: 'hidden', bgcolor: '#FBFDFF', display: 'flex', flexDirection: 'column', borderRadius: '12px', flex: 'none' }} onMouseLeave={() => setHover(null)}>
       <Stack direction="row" alignItems="flex-start" gap={1} sx={{ px: 1.75, pt: 1.25, pb: 0.5 }}>
         <Box flex={1} minWidth={0}>
           <Typography variant="overline" component="div" lineHeight={1.2}>FIG. {number}</Typography>
@@ -224,12 +238,12 @@ export default function Anatomy({ m, lit, title = 'Press anatomy', number = 1, h
         })}
         {picked && <MenuItem onClick={() => (setPicked(null), setMenu(null))} dense sx={{ color: C.blue, fontWeight: 700 }}>{t('Back to the live problem part')}</MenuItem>}
       </Menu>
-      <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>
+      <Box sx={{ height, flex: 'none', position: 'relative' }}>
         {view === 'drawing' ? (
-          <Drawing parts={parts} litPart={litPart} running={m.status === 'running'} reduced={reduced} onFocus={setHover} onPick={setPicked} />
+          <Drawing parts={parts} litPart={litPart} faultPart={faultPart} running={m.status === 'running'} reduced={reduced} onFocus={setHover} onPick={setPicked} />
         ) : (
           <Suspense fallback={<LinearProgress />}>
-            <Press3D parts={parts} litId={litPart?.id} running={m.status === 'running'} reduced={reduced} onHover={setHover} onPick={setPicked} />
+            <Press3D parts={parts} litId={litPart?.id} faultId={faultPart?.id} running={m.status === 'running'} reduced={reduced} onHover={setHover} onPick={setPicked} />
           </Suspense>
         )}
       </Box>
@@ -237,10 +251,12 @@ export default function Anatomy({ m, lit, title = 'Press anatomy', number = 1, h
       <Box sx={{ px: 1.75, py: 1, borderTop: `1px solid ${C.line}`, bgcolor: '#FFFFFF' }} aria-live="polite">
         <Stack direction="row" alignItems="center" gap={1}>
           <Typography fontWeight={800} noWrap flex={1} minWidth={0} sx={{ color: alarmColor }}>{litPart ? t(litPart.name) : '—'}</Typography>
-          <Stack direction="row" gap={1} flex="none" alignItems="center">
-            <Typography variant="caption" sx={{ color: C.blue, fontWeight: 700 }}>● {t('sensor')}</Typography>
-            <Typography variant="caption" sx={{ color: ACCENT, fontWeight: 700 }}>■ {t('transmitter')}</Typography>
-          </Stack>
+        </Stack>
+        {/* legend: what each colour means */}
+        <Stack direction="row" columnGap={1.5} rowGap={0.25} flexWrap="wrap" mt={0.25} mb={0.5}>
+          <Typography variant="caption" sx={{ color: C.blue, fontWeight: 700 }}>● {t('Sensor point')}</Typography>
+          {faultPart && <Typography variant="caption" sx={{ color: FAULT, fontWeight: 700 }}>■ {t('Sensor that raised the problem')}</Typography>}
+          <Typography variant="caption" sx={{ color: ACCENT, fontWeight: 700 }}>■ {t('Selected part')}</Typography>
         </Stack>
         <Stack direction="row" columnGap={1.5} rowGap={0.25} flexWrap="wrap">
           {onPart?.length ? (

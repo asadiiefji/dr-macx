@@ -21,6 +21,7 @@ import ArrowIcon from '@mui/icons-material/ArrowForwardRounded';
 import HandoverIcon from '@mui/icons-material/HistoryEduOutlined';
 import BuildIcon from '@mui/icons-material/PrecisionManufacturingOutlined';
 import BackIcon from '@mui/icons-material/ArrowBackRounded';
+import CheckIcon from '@mui/icons-material/CheckRounded';
 import DemoIcon from '@mui/icons-material/ScienceOutlined';
 import UpIcon from '@mui/icons-material/NorthEastRounded';
 import DownIcon from '@mui/icons-material/SouthEastRounded';
@@ -397,7 +398,7 @@ function Main({ session, onChange, onExit }) {
 
         <Box sx={{ gridArea: 'actions', display: 'grid', gap: 1, gridTemplateColumns: fit ? '1fr' : '1fr 1fr', alignContent: 'end' }}>
           <Button variant="contained" onClick={ask} disabled={asked?.loading} startIcon={<ChatIcon />} sx={{ minHeight: 46, fontSize: 15, fontWeight: 700, borderRadius: R.inner }}>
-            {t('Get status Dr. Macx')}
+            {t('Ask Dr. Macx')}
           </Button>
           <Button
             variant="outlined" color="primary" onClick={() => setTalk({ question })} startIcon={<WaveIcon />}
@@ -426,7 +427,7 @@ function Main({ session, onChange, onExit }) {
       </Popup>
       {asked && (
         <AskPopup
-          asked={asked} emotion={emotion} voice={voice} voiceOn={voiceOn} reduced={reduced} running={row.status === 'running'}
+          asked={asked} emotion={emotion} voice={voice} voiceOn={voiceOn} reduced={reduced} running={row.status === 'running'} machineId={machineId} lang={lang}
           onAgain={ask} onClose={() => (voice.stop?.(), setAsked(null))}
         />
       )}
@@ -697,19 +698,20 @@ function Progress({ row, live, now }) {
   const share = plan.shift ? good / plan.shift : 0;
   const k = level(plan.toNow ? good / plan.toNow : null, row.targets?.oee);
   const diff = projected - f.target;
-  const stat = (label, value, note) => (
-    <Stack direction="row" alignItems="baseline" gap={1} minWidth={0}>
+  // one column per figure: label, the number, what it means (as in the reference)
+  const stat = (label, value, note, color = C.ink, noteColor = 'text.secondary') => (
+    <Box minWidth={0}>
       <Typography variant="body2" color="text.secondary" noWrap>{label}</Typography>
-      <Typography component="div" sx={{ fontSize: 15, fontWeight: 700 }} noWrap>{value}</Typography>
-      <Typography variant="caption" color="text.secondary" noWrap>{note}</Typography>
-    </Stack>
+      <Typography component="div" sx={{ fontSize: 26, fontWeight: 700, lineHeight: 1.2, color, letterSpacing: '-0.01em' }} noWrap>{value}</Typography>
+      <Typography variant="body2" noWrap sx={{ color: noteColor, fontSize: 13 }}>{note}</Typography>
+    </Box>
   );
   return (
     <Card sx={{ ...panel, py: 1.25, gridArea: 'progress' }}>
       <Stack direction="row" alignItems="center" gap={1.5}>
         <Typography fontWeight={700} fontSize={14} component="h2" noWrap>{t('Production progress')} · {t(live.shift.name)}</Typography>
         <Typography variant="caption" color="text.secondary" noWrap sx={{ flex: 1, minWidth: 0 }}>
-          {duration(Math.max(0, live.shift.end - now))} {t('left')} · {t('plan = planned time ÷ ideal cycle time')} ({row.idealCycleTime} s)
+          {duration(Math.max(0, live.shift.end - now))} {t('left')} · {num(plan.toNow)} {t('pcs due by now')} · {t('plan = planned time ÷ ideal cycle time')} ({row.idealCycleTime} s)
         </Typography>
         <Typography sx={{ fontSize: 18, fontWeight: 800, lineHeight: 1 }}>{Math.round(share * 100)}%</Typography>
       </Stack>
@@ -717,10 +719,10 @@ function Progress({ row, live, now }) {
         <Box sx={{ position: 'absolute', inset: 0, width: `${Math.min(100, share * 100)}%`, bgcolor: k ? LEVELS[k].bar : C.blue, borderRadius: 5 }} />
         <Box sx={{ position: 'absolute', top: 0, bottom: 0, left: `${plan.shift ? Math.min(100, (plan.toNow / plan.shift) * 100) : 0}%`, width: 2, bgcolor: C.ink }} />
       </Box>
-      <Box sx={{ display: 'grid', columnGap: 2, rowGap: 0.5, gridTemplateColumns: { xs: '1fr', md: 'repeat(3, auto)' }, justifyContent: 'space-between' }}>
-        {stat(t('Actual qty by now'), num(good), `${t('qty produced')} · ${num(plan.toNow)} ${t('due by now')}`)}
-        {stat(t('Schedule plan'), num(plan.shift), t('qty / shift'))}
-        {stat(t('Projected end of shift'), num(projected), <Box component="span" sx={{ color: diff < 0 ? LEVELS.below.color : LEVELS.good.color, fontWeight: 700 }}>{num(Math.abs(diff))} {t(diff < 0 ? 'qty below target' : 'qty above target')} ({num(f.target)})</Box>)}
+      <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: 'repeat(3, minmax(0,1fr))' }}>
+        {stat(t('Actual Qty by Now'), num(good), t('pcs produced'), k ? LEVELS[k].color : C.ink)}
+        {stat(t('Schedule Plan'), num(plan.shift), t('pcs per shift'))}
+        {stat(t('Projected End Shift'), num(projected), `${num(Math.abs(diff))} ${t(diff < 0 ? 'pcs below target' : 'pcs above target')} (${num(f.target)})`, C.ink, diff < 0 ? LEVELS.below.color : LEVELS.good.color)}
       </Box>
     </Card>
   );
@@ -728,7 +730,7 @@ function Progress({ row, live, now }) {
 
 // Ask Dr. Macx: the screen dims, the press thinks while Gemini reads its sensors and history, then says the
 // answer with a subtitle under its face.
-function AskPopup({ asked, emotion, voice, voiceOn, reduced, running, onAgain, onClose }) {
+function AskPopup({ asked, emotion, voice, voiceOn, reduced, running, onAgain, onClose, machineId, lang }) {
   const t = useT();
   const msg = asked.msg;
   // with the voice muted the mouth still moves, for about as long as the answer takes to say
@@ -742,9 +744,10 @@ function AskPopup({ asked, emotion, voice, voiceOn, reduced, running, onAgain, o
   const talking = voice.talking || mouth;
   const face = asked.loading ? 'thinking' : asked.error ? 'worried' : emotion === 'sleepy' ? 'calm' : emotion;
   return (
-    <Popup open size="wide" onClose={onClose} title={t('Get status Dr. Macx')}>
-      <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', lg: 'minmax(0,1fr) minmax(0,1fr)' } }}>
-        <Box minWidth={0}>
+    <Popup open size="wide" fill onClose={onClose} title={t('Ask Dr. Macx')}>
+      {/* left: my face and what I say (scrolls on its own); right: the chat (only the conversation scrolls) */}
+      <Box sx={{ flex: 1, minHeight: 0, display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', lg: 'minmax(0,1fr) minmax(0,1fr)' } }}>
+        <Box minWidth={0} sx={{ overflowY: { lg: 'auto' }, minHeight: 0, pr: { lg: 0.5 } }}>
       <Box sx={{ position: 'relative', height: { xs: 240, md: 300 }, borderRadius: R.inner, background: `radial-gradient(circle at 50% 55%, ${C.light}, #FFFFFF 72%)`, border: `1px solid ${C.line}` }}>
         <Box sx={{ position: 'absolute', inset: 0 }}>
           <PressCharacter emotion={face} talking={talking} running={running} reduced={reduced} />
@@ -778,67 +781,116 @@ function AskPopup({ asked, emotion, voice, voiceOn, reduced, running, onAgain, o
         <Button variant="contained" onClick={onClose}>{t('Close')}</Button>
       </Stack>
         </Box>
-        <ChatPanel />
+        <ChatPanel machineId={machineId} lang={lang} />
       </Box>
     </Popup>
   );
 }
 
-// Chat with Dr. Macx, beside the status. ponytail: layout only, with a sample conversation; the chat logic
-// (send the question with the press's context to Gemini, keep the thread) comes later.
-const SAMPLE_CHAT = [
-  { from: 'operator', at: '15:21', text: 'Why is my performance low this shift?' },
-  { from: 'press', at: '15:21', text: 'My cycle time is 7.6 seconds against an ideal of 6. Most of the loss is short feeder jams: three in the last hour.' },
-  { from: 'operator', at: '15:22', text: 'What should I check first?' },
-  { from: 'press', at: '15:22', text: 'The feeder guides and the strip lubrication. If jams continue after that, ask maintenance to check the stripper plate.' },
-  { from: 'operator', at: '15:24', text: 'Can we still reach the target?' },
-  { from: 'press', at: '15:24', text: 'Not fully. At my ideal cycle with no more stops I would make about 2,550 of 3,570. Short stops get us closest.' },
-];
+// Chat with Dr. Macx, beside the status: the operator asks, the press answers from its live data (Gemini, in the
+// kiosk language, POST /api/machines/:id/soul/chat). Only the conversation scrolls; the input stays in view.
+const STARTERS = ['Why am I behind plan?', 'What should I check first?', 'Can we still reach the target?'];
 
-function ChatPanel() {
+function ChatPanel({ machineId, lang }) {
   const t = useT();
+  const [msgs, setMsgs] = useState([]); // { role: 'user' | 'model', text, at }
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const end = useRef(null);
+  const dictation = useDictation(BCP[lang] ?? 'en-US', (said) => setText((x) => `${x} ${said}`.trim()));
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
+  }, [msgs, busy]);
+  const ask = async (q) => {
+    const question = q.trim();
+    if (!question || busy) return;
+    const next = [...msgs, { role: 'user', text: question, at: Date.now() }];
+    setMsgs(next);
+    setText('');
+    setBusy(true);
+    setError('');
+    try {
+      const r = await api(`/machines/${machineId}/soul/chat`, { method: 'POST', body: { lang, messages: next.slice(-20).map(({ role, text: x }) => ({ role, text: x })) } });
+      setMsgs((m) => [...m, { role: 'model', text: r.text, at: Date.now() }]);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const bubble = (m, i) => {
+    const me = m.role === 'user';
+    return (
+      <Stack key={i} direction="row" justifyContent={me ? 'flex-end' : 'flex-start'} gap={1}>
+        {!me && <Box sx={{ width: 28, height: 28, borderRadius: '50%', bgcolor: '#F7A912', flex: 'none', display: 'grid', placeItems: 'center', color: '#3B2A05', fontWeight: 800, fontSize: 12 }} aria-hidden>Dr</Box>}
+        <Box sx={{ maxWidth: '80%', px: 1.25, py: 0.75, borderRadius: '12px', ...(me ? { bgcolor: C.blue, color: '#FFFFFF', borderBottomRightRadius: '4px' } : { bgcolor: C.light, color: C.ink, borderBottomLeftRadius: '4px' }) }}>
+          <Typography variant="body2" sx={{ lineHeight: 1.45, whiteSpace: 'pre-line' }}>{m.text}</Typography>
+          {m.at && <Typography variant="caption" sx={{ opacity: 0.7, display: 'block', textAlign: 'right', mt: 0.25 }}>{hhmm(m.at)}</Typography>}
+        </Box>
+      </Stack>
+    );
+  };
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: { lg: 520 }, border: `1px solid ${C.line}`, borderRadius: R.inner, overflow: 'hidden' }}>
-      <Stack direction="row" alignItems="center" gap={1} sx={{ px: 1.5, py: 1, borderBottom: `1px solid ${C.line}`, bgcolor: '#F8FAFC' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: { xs: 420, lg: 0 }, height: { lg: '100%' }, border: `1px solid ${C.line}`, borderRadius: R.inner, overflow: 'hidden' }}>
+      <Stack direction="row" alignItems="center" gap={1} sx={{ px: 1.5, py: 1, borderBottom: `1px solid ${C.line}`, bgcolor: '#F8FAFC', flex: 'none' }}>
         <ChatIcon sx={{ color: C.blue, fontSize: 20 }} />
         <Typography fontWeight={700} flex={1}>{t('Chat with Dr. Macx')}</Typography>
-        <Chip size="small" label={t('Sample conversation')} sx={{ height: 22, bgcolor: '#FFF8E1', color: '#8A5300' }} />
+        <Chip size="small" label="Gemini" sx={{ height: 22, bgcolor: C.light, color: C.blueDark }} />
       </Stack>
-      <Stack spacing={1.25} sx={{ flex: 1, overflowY: 'auto', p: 1.5, maxHeight: { xs: 360, lg: 'none' } }} role="log">
-        {SAMPLE_CHAT.map((c, i) => {
-          const me = c.from === 'operator';
-          return (
-            <Stack key={i} direction="row" justifyContent={me ? 'flex-end' : 'flex-start'} gap={1}>
-              {!me && <Box sx={{ width: 28, height: 28, borderRadius: '50%', bgcolor: '#F7A912', flex: 'none', display: 'grid', placeItems: 'center', color: '#3B2A05', fontWeight: 800, fontSize: 12 }} aria-hidden>Dr</Box>}
-              <Box sx={{ maxWidth: '80%', px: 1.25, py: 0.75, borderRadius: '12px', ...(me ? { bgcolor: C.blue, color: '#FFFFFF', borderBottomRightRadius: '4px' } : { bgcolor: C.light, color: C.ink, borderBottomLeftRadius: '4px' }) }}>
-                <Typography variant="body2" sx={{ lineHeight: 1.45 }}>{t(c.text)}</Typography>
-                <Typography variant="caption" sx={{ opacity: 0.7, display: 'block', textAlign: 'right', mt: 0.25 }}>{c.at}</Typography>
-              </Box>
-            </Stack>
-          );
-        })}
+      <Stack spacing={1.25} sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 1.5 }} role="log" aria-live="polite">
+        {bubble({ role: 'model', text: t('Hi! Ask me anything about how I am doing: output, stops, sensors or what to check.') }, 'hello')}
+        {msgs.length === 0 && (
+          <Stack direction="row" gap={0.75} flexWrap="wrap" pl={4.5}>
+            {STARTERS.map((q) => <Chip key={q} label={t(q)} clickable onClick={() => ask(t(q))} variant="outlined" sx={{ height: 30, borderRadius: '8px', borderColor: C.line }} />)}
+          </Stack>
+        )}
+        {msgs.map(bubble)}
+        {busy && bubble({ role: 'model', text: '…' }, 'typing')}
+        {error && <Alert severity="error">{error}</Alert>}
+        <Box ref={end} />
       </Stack>
-      <Stack direction="row" gap={1} alignItems="center" sx={{ p: 1, borderTop: `1px solid ${C.line}` }}>
-        <TextField size="small" fullWidth placeholder={t('Ask Dr. Macx anything…')} disabled />
-        <IconButton aria-label={t('Speak')} disabled sx={{ border: `1px solid ${C.line}`, borderRadius: R.inner }}><MicIcon /></IconButton>
-        <Button variant="contained" disabled sx={{ minHeight: 40, borderRadius: R.inner }}>{t('Send')}</Button>
+      <Stack component="form" onSubmit={(e) => (e.preventDefault(), ask(text))} direction="row" gap={1} alignItems="center" sx={{ p: 1, borderTop: `1px solid ${C.line}`, flex: 'none' }}>
+        <TextField size="small" fullWidth placeholder={t('Ask Dr. Macx anything…')} value={text} onChange={(e) => setText(e.target.value)} slotProps={{ htmlInput: { maxLength: 2000, 'aria-label': t('Your question') } }} />
+        {dictation.supported && (
+          <IconButton aria-label={t(dictation.listening ? 'Stop recording' : 'Start recording')} onClick={dictation.listening ? dictation.stop : dictation.start} sx={{ border: `1px solid ${C.line}`, borderRadius: R.inner, width: 40, height: 40, color: dictation.listening ? 'error.main' : C.blue }}>
+            {dictation.listening ? <StopIcon fontSize="small" /> : <MicIcon fontSize="small" />}
+          </IconButton>
+        )}
+        <Button type="submit" variant="contained" disabled={!text.trim() || busy} sx={{ minHeight: 40, borderRadius: R.inner }}>{t('Send')}</Button>
       </Stack>
-      <Typography variant="caption" color="text.secondary" sx={{ px: 1.5, pb: 1 }}>{t('Chat is coming soon: this is a sample of how it will look.')}</Typography>
     </Box>
   );
 }
 
 // "Explain by voice": the operator tells what happened (or answers the press's question); Gemini checks it.
-// Answers by tap, typing or voice (a loud floor, or an operator who would rather not talk to a screen).
+// Answers by tap, typing or voice (a loud floor, or an operator who would rather not talk to a screen). The tap options
+// are Gemini's guesses of what happened (in the kiosk language); each one toggles on and off, and a question about a
+// short hour also offers Yes / Partly / No for the causes the press proposed. Everything selected plus the typed text
+// is sent together.
 function VoiceDialog({ machineId, operator, lang, question, preset, quick, onClose, onDone }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [verdict, setVerdict] = useState(preset ?? null); // Yes / Partly / No… for a question (one at a time)
+  const [picked, setPicked] = useState([]); // Gemini options switched on
+  const [options, setOptions] = useState(null); // null while Gemini thinks
   const dictation = useDictation(BCP[lang] ?? 'en-US', (said) => setText((x) => `${x} ${said}`.trim()));
   const t = useT();
   const causes = question?.data?.causes ?? [];
-  const answers = question ? question.data?.answers ?? [] : quick;
-  const send = async (body = text) => {
+  const verdicts = question?.data?.answers ?? [];
+  useEffect(() => {
+    let on = true;
+    api(`/machines/${machineId}/soul/options`, { method: 'POST', body: { lang } }).then(
+      (r) => on && setOptions(r.options?.length ? r.options : quick.map(t)),
+      () => on && setOptions(quick.map(t)), // Gemini busy: this shift's frequent reasons instead
+    );
+    return () => { on = false; };
+  }, [machineId, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+  const toggle = (o) => setPicked((p) => (p.includes(o) ? p.filter((x) => x !== o) : [...p, o]));
+  const verdictText = verdict && (verdict === 'Yes' && causes.length ? `Yes, it was ${causes.map((c) => `${c.count} × ${c.reason} (${c.minutes} min)`).join(' and ')}` : t(verdict));
+  const body = [verdictText, ...picked, text.trim()].filter(Boolean).join('. ');
+  const send = async () => {
     setBusy(true);
     setError('');
     try {
@@ -850,44 +902,48 @@ function VoiceDialog({ machineId, operator, lang, question, preset, quick, onClo
       setBusy(false);
     }
   };
-  const tap = (a) => {
-    if (question && a === 'Yes' && causes.length) return send(`Yes, it was ${causes.map((c) => `${c.count} × ${c.reason} (${c.minutes} min)`).join(' and ')}.`);
-    setText((x) => (question ? `${t(a)}: ${x}` : `${x}${x ? ', ' : ''}${t(a)}`).trim());
-  };
-  useEffect(() => {
-    if (preset) tap(preset);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const chip = (label, on, onClick, ask) => (
+    <Chip
+      key={label} label={label} clickable onClick={onClick} disabled={busy} icon={on ? <CheckIcon /> : undefined} aria-pressed={on}
+      variant={on ? 'filled' : 'outlined'}
+      sx={{ height: 32, fontSize: 13.5, borderRadius: '8px', ...(on ? { bgcolor: ask ? SEV.ask.color : C.blue, color: '#FFFFFF', '& .MuiChip-icon': { color: '#FFFFFF' }, '&:hover': { bgcolor: ask ? SEV.ask.text : C.blueDark } } : { borderColor: ask ? SEV.ask.line : C.line, color: ask ? SEV.ask.text : C.ink }) }}
+    />
+  );
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>{t(question ? 'Answer my question' : 'Explain by voice or text')}</DialogTitle>
+      <DialogTitle sx={{ pb: 1 }}>{t(question ? 'Answer my question' : 'Explain by voice or text')}</DialogTitle>
       <DialogContent>
-        {question && <Box sx={{ p: 1.5, mb: 2, borderRadius: '8px', bgcolor: SEV.warn.bg, border: `1px solid ${SEV.warn.line}` }}><Typography>{question.text}</Typography></Box>}
-        {answers.length > 0 && (
-          <Stack direction="row" gap={1} flexWrap="wrap" mb={2} aria-label={t('Tap an answer')}>
-            {answers.map((a) => (
-              <Button key={a} variant="outlined" disabled={busy} onClick={() => tap(a)} sx={{ borderRadius: '8px', ...(question && { borderColor: SEV.ask.line, color: SEV.ask.text }) }}>{t(a)}</Button>
-            ))}
+        {question && <Box sx={{ p: 1.25, mb: 1.5, borderRadius: '8px', bgcolor: SEV.ask.bg, border: `1px solid ${SEV.ask.line}` }}><Typography variant="body2">{question.text}</Typography></Box>}
+        {verdicts.length > 0 && (
+          <Stack direction="row" gap={0.75} flexWrap="wrap" mb={1.5} aria-label={t('Your answer')}>
+            {verdicts.map((v) => chip(t(v), verdict === v, () => setVerdict(verdict === v ? null : v), true))}
           </Stack>
         )}
-        <Typography color="text.secondary" mb={2}>{t('Tap an answer, type, or press the mic and say it in any language. I check it against my sensors and keep it in my history.')}</Typography>
-        <Stack direction="row" gap={1.5} alignItems="flex-start">
+        <Typography variant="caption" color="text.secondary" component="div" mb={0.75}>
+          {t('Gemini suggests (tap to add, tap again to remove)')}
+        </Typography>
+        <Stack direction="row" gap={0.75} flexWrap="wrap" mb={1.5} aria-label={t('Suggested answers')}>
+          {!options && [0, 1, 2].map((i) => <Chip key={i} label="…" variant="outlined" sx={{ height: 32, width: 120, borderRadius: '8px', opacity: 0.5 }} />)}
+          {options?.map((o) => chip(o, picked.includes(o), () => toggle(o)))}
+        </Stack>
+        <Stack direction="row" gap={1} alignItems="flex-start">
           {dictation.supported && (
             <IconButton
               aria-label={t(dictation.listening ? 'Stop recording' : 'Start recording')}
               onClick={dictation.listening ? dictation.stop : dictation.start}
-              sx={{ width: 56, height: 56, flex: 'none', bgcolor: dictation.listening ? LEVELS.below.bg : C.light, color: dictation.listening ? LEVELS.below.color : C.blue }}
+              sx={{ width: 44, height: 44, flex: 'none', borderRadius: '8px', bgcolor: dictation.listening ? LEVELS.below.bg : C.light, color: dictation.listening ? LEVELS.below.color : C.blue }}
             >
-              {dictation.listening ? <StopIcon fontSize="large" /> : <MicIcon fontSize="large" />}
+              {dictation.listening ? <StopIcon /> : <MicIcon />}
             </IconButton>
           )}
-          <TextField multiline minRows={3} maxRows={8} fullWidth placeholder={t('What happened?')} value={text} onChange={(e) => setText(e.target.value)} slotProps={{ htmlInput: { maxLength: 2000 } }} />
+          <TextField multiline minRows={2} maxRows={6} fullWidth size="small" placeholder={t('Add details (type, or press the mic and speak any language)')} value={text} onChange={(e) => setText(e.target.value)} slotProps={{ htmlInput: { maxLength: 2000 } }} />
         </Stack>
         {dictation.listening && <Typography variant="caption" color="error.main">{t('Listening… press stop when you are done.')}</Typography>}
         {(error || dictation.error) && <Alert severity="error" sx={{ mt: 1.5 }}>{error || dictation.error}</Alert>}
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button onClick={onClose}>{t('Cancel')}</Button>
-        <Button variant="contained" onClick={() => send()} disabled={!text.trim() || busy}>{busy ? <CircularProgress size={20} color="inherit" /> : t('Send to Dr. Macx')}</Button>
+        <Button variant="contained" onClick={send} disabled={!body || busy}>{busy ? <CircularProgress size={18} color="inherit" /> : t('Send to Dr. Macx')}</Button>
       </DialogActions>
     </Dialog>
   );
