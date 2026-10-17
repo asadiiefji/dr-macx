@@ -1,6 +1,8 @@
 // Demo master data + 30 days of simulated history. Fixed IDs, so re-running overwrites these docs only
 // and never duplicates; history is only generated for a machine that has none yet.
 // Run: npm run seed (dev runs it automatically, since the emulator starts empty).
+// SEED_ONLY=prs-05,prs-07 adds just those presses (their master data if missing, their skills and history) and
+// writes nothing else: operators, reasons, settings and every other press stay as they are.
 import { Firestore } from '@google-cloud/firestore';
 import { schemas, parseSettings, DEFAULT_TARGETS } from './validate.js';
 import { currentShift, dayStart, onBreak, breakIn } from './oee.js';
@@ -160,25 +162,33 @@ function simulate(id, raw) {
   return { writes, rows, hours: rec.hours.size, events: events.length };
 }
 
+const only = process.env.SEED_ONLY?.split(',').map((s) => s.trim()).filter(Boolean);
+for (const id of only ?? []) if (!machines[id]) throw new Error(`SEED_ONLY: unknown press ${id}`);
+const picked = (id) => !only || only.includes(id);
+
 const writes = [];
 const reasonDocs = Object.fromEntries(reasons.map((r) => [r.code, r]));
-for (const [col, docs] of Object.entries({ machines, operators, reasons: reasonDocs })) {
+const masters = only ? { machines: Object.fromEntries(Object.entries(machines).filter(([id]) => picked(id))) } : { machines, operators, reasons: reasonDocs };
+for (const [col, docs] of Object.entries(masters)) {
   for (const [id, body] of Object.entries(docs)) {
+    if (only && (await db.doc(`${col}/${id}`).get()).exists) continue; // adding presses never overwrites one
     const { value, error } = schemas[col].parse(body);
     if (error) throw new Error(`${col}/${id}: ${error}`);
     writes.push([`${col}/${id}`, { ...value, updatedAt: Date.now() }]);
   }
 }
 for (const [machineId, levels] of Object.entries(skills)) {
+  if (!picked(machineId)) continue;
   for (const [operatorId, level] of Object.entries(levels)) {
     writes.push([`skills/${operatorId}__${machineId}`, { operatorId, machineId, level }]);
   }
 }
-writes.push(['settings/oee', parseSettings(settings).value]);
+if (!only) writes.push(['settings/oee', parseSettings(settings).value]);
 await commit(writes);
-console.log(`Seeded ${Object.keys(machines).length} presses, 4 operators, skills, ${reasons.length} downtime reasons and planned breaks.`);
+console.log(only ? `Added ${only.join(', ')}: ${writes.length} docs (presses and skills).` : `Seeded ${Object.keys(machines).length} presses, 4 operators, skills, ${reasons.length} downtime reasons and planned breaks.`);
 
 for (const [id, m] of Object.entries(machines)) {
+  if (!picked(id)) continue;
   // never overwrite recorded history: Firestore and BigQuery are each filled only when empty for this press
   const past = db.collection(`machines/${id}/hours`).where('start', '<', currentShift().start).limit(1);
   const needFirestore = (await past.get()).empty;
