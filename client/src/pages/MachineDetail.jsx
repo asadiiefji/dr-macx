@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link as RouterLink, useParams } from 'react-router';
+import { Link as RouterLink, useParams, useSearchParams } from 'react-router';
 import {
   Alert, Box, Card, CardContent, Grid, Link, MenuItem, Stack, Tab, Table, TableBody, TableCell, TableHead, TableRow, Tabs,
   TextField, Typography,
@@ -37,7 +37,8 @@ export default function MachineDetail() {
   const { id } = useParams();
   const { live, error } = useLive();
   const machines = useCollection('machines');
-  const [tab, setTab] = useState(0);
+  const [search] = useSearchParams();
+  const [tab, setTab] = useState(search.get('tab') === 'history' ? 1 : 0); // ?tab=history from the Monitoring card
   const [f, setF] = useState({ preset: '7d', from: dateInput(PRESETS['7d'].from()), to: dateInput(today()), shift: '', by: 'day' });
 
   const m = live?.machines.find((x) => x.id === id);
@@ -53,7 +54,7 @@ export default function MachineDetail() {
 
   return (
     <>
-      <Link component={RouterLink} to="/monitoring" underline="hover" sx={{ display: 'inline-block', mb: 1, fontWeight: 600 }}>← Machine monitoring</Link>
+      <Link component={RouterLink} to="/monitoring" underline="hover" sx={{ display: 'inline-block', mb: 1, fontWeight: 600 }}>← Monitoring</Link>
       <PageHeader overline={[m.line, m.area].filter(Boolean).join(' · ').toUpperCase() || 'MACHINE'} title={`${m.code} · ${m.name}`}>
         <Stack alignItems={{ sm: 'flex-end' }} gap={0.5}>
           <StatusChip status={m.status} />

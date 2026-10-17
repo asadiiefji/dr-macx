@@ -268,7 +268,7 @@ export function EventDetail({ e, row, sensors, reasons, operator, lang, onClose,
   if (!e) return null;
   const s = SEV[e.sev];
   const d = e.message?.data ?? {};
-  const side = e.part || e.stop;
+  const side = e.part || e.stop || e.kind === 'advice'; // anything with a cause on the press shows its anatomy
   return (
     <Popup
       open
@@ -308,7 +308,7 @@ export function EventDetail({ e, row, sensors, reasons, operator, lang, onClose,
           <Anatomy
             m={row} title={t(e.part ? 'Where it is' : 'My anatomy')} height={340}
             lit={e.part ? { part: e.part, node: e.node ?? null } : undefined}
-            fault={e.part && (e.stop || e.kind === 'stopDone' || e.kind === 'anomaly') ? { part: e.part, node: e.node ?? null } : undefined}
+            fault={e.part && (e.stop || ['stopDone', 'anomaly', 'advice'].includes(e.kind)) ? { part: e.part, node: e.node ?? null } : undefined}
           />
         )}
       </Box>

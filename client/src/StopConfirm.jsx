@@ -1,13 +1,13 @@
 // Confirming a stop's downtime reason, from the monitoring card or the downtime log.
 import { useRef, useState } from 'react';
 import {
-  Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, LinearProgress,
+  Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton,
   ListSubheader, MenuItem, Stack, TextField, Tooltip, Typography,
 } from '@mui/material';
 import MicIcon from '@mui/icons-material/MicNoneOutlined';
 import StopIcon from '@mui/icons-material/StopCircleOutlined';
 import AiIcon from '@mui/icons-material/AutoAwesomeOutlined';
-import { api, useCollection, useGet } from './api.js';
+import { api, useCollection } from './api.js';
 import { CategoryLabel, Mono, RepeatChip, TypeChip, duration } from './ui.jsx';
 import { C, CATEGORIES } from './theme.js';
 import { useT } from './i18n.jsx';
@@ -64,7 +64,7 @@ function reasonItems(reasons, event, t) {
   });
 }
 
-// operatorId (optional): who answers; they earn the points (Machine Soul / 3D Floor).
+// operatorId (optional): who answers; they earn the points (Dr. Macx Live).
 export function StopForm({ machineId, event, reasons, onSaved, operatorId, lang: kioskLang }) {
   const [code, setCode] = useState(event.reasonCode ?? event.suggested ?? '');
   const [comment, setComment] = useState(event.comment ?? '');
@@ -185,30 +185,6 @@ export function StopForm({ machineId, event, reasons, onSaved, operatorId, lang:
         <Button variant="contained" onClick={save} disabled={!code || saving} sx={{ ...ctl, minHeight: 40, px: 2.5, flex: 'none', ml: 'auto' }}>{t('Confirm')}</Button>
       </Stack>
     </Stack>
-  );
-}
-
-// All stops of one machine still waiting for a confirmed reason.
-export function PendingDialog({ machine, onClose }) {
-  const pending = useGet(`/machines/${machine.id}/downtime/pending`);
-  const reasons = useCollection('reasons');
-  const list = pending.data ?? [];
-  return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="md">
-      <DialogTitle>
-        <Typography variant="overline" component="div">DOWNTIME TO CONFIRM · {machine.code}</Typography>
-        <Typography variant="h5" component="span">{list.length ? `${list.length} stop${list.length > 1 ? 's' : ''} need a reason` : 'All stops confirmed'}</Typography>
-      </DialogTitle>
-      <DialogContent>
-        {pending.loading && !pending.data && <LinearProgress />}
-        {pending.error && <Alert severity="error">{pending.error}</Alert>}
-        {pending.data && !list.length && <Typography color="text.secondary">Every stop on {machine.code} has a confirmed reason.</Typography>}
-        <Stack divider={<Divider />} spacing={2} pt={1}>
-          {list.map((e) => <StopForm key={e.id} machineId={machine.id} event={e} reasons={reasons.rows} onSaved={pending.reload} />)}
-        </Stack>
-      </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2 }}><Button onClick={onClose}>Close</Button></DialogActions>
-    </Dialog>
   );
 }
 

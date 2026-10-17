@@ -1,11 +1,9 @@
-// Simulation controls for dummy-generator presses (demo only): move each OEE factor lower / better,
-// start a fault story, or break the press down now. m = live row (sim, simLevels, setup).
+// Simulation controls for dummy-generator presses (demo mode on the kiosk): move each OEE factor lower / better,
+// or break the press down now. m = live row (sim, simLevels, setup).
 import { useState } from 'react';
-import { Box, Button, IconButton, Stack, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
+import { Button, IconButton, Stack, Tooltip, Typography } from '@mui/material';
 import LowerIcon from '@mui/icons-material/RemoveRounded';
 import BetterIcon from '@mui/icons-material/AddRounded';
-import DownIcon from '@mui/icons-material/TrendingDownOutlined';
-import UpIcon from '@mui/icons-material/TrendingUpOutlined';
 import BreakdownIcon from '@mui/icons-material/BuildCircleOutlined';
 import { api } from './api.js';
 import { C, FACTORS, LEVELS } from './theme.js';
@@ -13,7 +11,6 @@ import { useT } from './i18n.jsx';
 
 const STEPS = ['worse', 'normal', 'better'];
 const LOOK = { worse: { ...LEVELS.below, label: 'Lower' }, normal: { label: 'Normal', color: C.blueDark, bg: C.light }, better: { ...LEVELS.good, label: 'Better' } };
-const FAULTS = { looseNode: 'Loose node', stick: 'Sticking part', ioFault: 'Proximity sensor', overheat: 'Lube overheat' };
 
 export function useSim(m) {
   const [error, setError] = useState('');
@@ -54,35 +51,5 @@ export function BreakdownButton({ sim, sx }) {
         {t('Breakdown')}
       </Button>
     </Tooltip>
-  );
-}
-
-// The full panel on a monitoring card: all factors at once, each factor, breakdown, fault stories.
-export function Simulate({ m }) {
-  const sim = useSim(m);
-  return (
-    <Box>
-      <Typography variant="caption" color="text.secondary" component="div" mb={0.5}>Simulate OEE (dummy generator)</Typography>
-      <ToggleButtonGroup size="small" exclusive value={m.sim} onChange={(e, mode) => mode && sim.send({ mode })} aria-label={`Simulate OEE for ${m.code}`} fullWidth>
-        <ToggleButton value="worse" sx={{ '&.Mui-selected, &.Mui-selected:hover': { bgcolor: LEVELS.below.bg, color: LEVELS.below.color } }}><DownIcon fontSize="small" sx={{ mr: 0.5 }} />Worse</ToggleButton>
-        <ToggleButton value="normal" sx={{ '&.Mui-selected, &.Mui-selected:hover': { bgcolor: C.light, color: C.blueDark } }}>Normal</ToggleButton>
-        <ToggleButton value="better" sx={{ '&.Mui-selected, &.Mui-selected:hover': { bgcolor: LEVELS.good.bg, color: LEVELS.good.color } }}><UpIcon fontSize="small" sx={{ mr: 0.5 }} />Better</ToggleButton>
-      </ToggleButtonGroup>
-      <Stack spacing={0.5} mt={1}>
-        {FACTORS.map((f) => (
-          <Stack key={f.key} direction="row" alignItems="center" justifyContent="space-between">
-            <Typography variant="body2">{f.label}</Typography>
-            <FactorSim m={m} factor={f.key} sim={sim} />
-          </Stack>
-        ))}
-      </Stack>
-      <Stack direction="row" flexWrap="wrap" gap={0.75} mt={1}>
-        <BreakdownButton sim={sim} />
-        {m.setup === 'premium' && Object.entries(FAULTS).map(([k, label]) => (
-          <Button key={k} size="small" variant="outlined" onClick={() => sim.send({ inject: k })} sx={{ minHeight: 28, py: 0, px: 1.25, fontSize: 12.5, borderRadius: '6px' }}>{label}</Button>
-        ))}
-      </Stack>
-      {sim.error && <Typography variant="caption" color="error">{sim.error}</Typography>}
-    </Box>
   );
 }

@@ -20,7 +20,7 @@ export default function SkillMatrix() {
 
   return (
     <>
-      <PageHeader overline="MASTER DATA" title="Skill matrix" />
+      <PageHeader overline="MASTER DATA" title="Skill matrix" tour="skills" />
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       <Stack direction="row" flexWrap="wrap" gap={1} mb={2}>
         {SKILLS.map((s) => <SkillChip key={s.level} level={s.level} />)}

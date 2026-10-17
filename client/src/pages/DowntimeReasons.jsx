@@ -6,6 +6,7 @@ export default function DowntimeReasons() {
   return (
     <MasterPage
       col="reasons"
+      tour="reasons"
       title="Downtime reasons"
       noun="Reason"
       sortKey="code"

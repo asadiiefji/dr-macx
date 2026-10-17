@@ -32,6 +32,8 @@ import { useDictation } from '../StopConfirm.jsx';
 import { sensorsFor, useSensorCatalog, valueOf } from '../sensors.js';
 import PressCharacter, { EMOTIONS } from './PressCharacter.jsx';
 import { BCP, useVoice } from './useVoice.js';
+import { tone } from './tones.js';
+import { TourButton, TourHost } from '../Tour.jsx';
 import Handovers from '../Handovers.jsx';
 import { Dual, I18nProvider, useLang, useT } from '../i18n.jsx';
 import { BreakdownButton, FactorSim, useSim } from '../Simulate.jsx';
@@ -111,7 +113,7 @@ function Gate({ session, onDone }) {
             <Logo />
             <Button component={RouterLink} to="/" startIcon={<BackIcon />}>{t('Back to Dr. Macx')}</Button>
           </Stack>
-          <Typography variant="h4" component="h1" mt={3}>{t('Machine Soul')}</Typography>
+          <Typography variant="h4" component="h1" mt={3}>{t('Dr. Macx Live')}</Typography>
           <Typography color="text.secondary" mb={3}>{t('Pick the press this screen stands next to, then sign in with your employee number.')}</Typography>
           <Typography variant="overline" component="h2">1 · {t('Press')}</Typography>
           <Grid container spacing={1.5} mb={3}>
@@ -236,9 +238,25 @@ function Main({ session, onChange, onExit }) {
     [...messages.data].reverse().forEach((m) => {
       if (heard.current.has(m.id)) return;
       heard.current.add(m.id);
-      if (m.kind !== 'operator') voice.say(m.text);
+      if (m.kind === 'operator') return;
+      // a tone first (different per kind), then the voice; a stop already rang when it appeared in the list
+      const wait = voiceOn && m.kind !== 'stop' ? tone(m.kind) : 0;
+      setTimeout(() => voice.say(m.text), wait);
     });
-  }, [messages.data, voice]);
+  }, [messages.data, voice]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A new stop (or breakdown) rings the alarm tone as soon as it shows in the list.
+  const seenStops = useRef(null);
+  useEffect(() => {
+    if (!pending.data) return;
+    if (!seenStops.current) {
+      seenStops.current = new Set(pending.data.map((e) => e.id));
+      return;
+    }
+    const fresh = pending.data.filter((e) => !seenStops.current.has(e.id));
+    fresh.forEach((e) => seenStops.current.add(e.id));
+    if (fresh.length && voiceOn) tone('stop');
+  }, [pending.data]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!session.greet || !row) return;
     voice.say((GREET[lang] ?? GREET.en)(operator.name.split(' ')[0], row.code));
@@ -327,12 +345,12 @@ function Main({ session, onChange, onExit }) {
           gridTemplateAreas: fit ? '"oee tabs" "soul tabs" "progress actions"' : '"oee" "soul" "progress" "actions" "tabs"',
         }}
       >
-        <OeePanel row={row} ring={short ? 124 : 148} demo={demo} />
+        <OeePanel row={row} ring={short ? 124 : 148} demo={demo} lang={lang} onAdvice={messages.reload} />
 
         {/* Machine Soul: the face in its own area, what I said beside it */}
-        <Card sx={{ ...panel, gridArea: 'soul', display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+        <Card data-tour="kiosk-soul" sx={{ ...panel, gridArea: 'soul', display: 'flex', flexDirection: 'column', gap: 1.25 }}>
           <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
-            <Typography fontWeight={700} fontSize={16} component="h2">{t('Machine Soul')}</Typography>
+            <Typography fontWeight={700} fontSize={16} component="h2">{t('Dr. Macx Live')}</Typography>
             <Chip size="small" label={t(`${mood.label} mood`)} sx={{ height: 22, fontSize: 12, bgcolor: `${mood.color}22`, color: C.ink, border: `1px solid ${mood.color}` }} />
             <Typography variant="body2" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' } }}>{t('Your AI assistant for this press · I speak when something changes')}</Typography>
             <Box flex={1} />
@@ -365,7 +383,7 @@ function Main({ session, onChange, onExit }) {
 
         <Progress row={row} live={live} now={now} />
 
-        <Card sx={{ ...panel, p: 1.25, gridArea: 'tabs', display: 'flex', flexDirection: 'column', gap: 1, height: fit ? 'auto' : 640 }}>
+        <Card data-tour="kiosk-tabs" sx={{ ...panel, p: 1.25, gridArea: 'tabs', display: 'flex', flexDirection: 'column', gap: 1, height: fit ? 'auto' : 640 }}>
           <Tabs
             value={tab} onChange={(e, v) => setTab(v)} variant="fullWidth"
             sx={{ minHeight: 36, borderBottom: 1, borderColor: 'divider', '& .MuiTab-root': { minHeight: 36, py: 0, fontSize: 13.5, px: 1 } }}
@@ -396,7 +414,7 @@ function Main({ session, onChange, onExit }) {
           </Box>
         </Card>
 
-        <Box sx={{ gridArea: 'actions', display: 'grid', gap: 1, gridTemplateColumns: fit ? '1fr' : '1fr 1fr', alignContent: 'end' }}>
+        <Box data-tour="kiosk-actions" sx={{ gridArea: 'actions', display: 'grid', gap: 1, gridTemplateColumns: fit ? '1fr' : '1fr 1fr', alignContent: 'end' }}>
           <Button variant="contained" onClick={ask} disabled={asked?.loading} startIcon={<ChatIcon />} sx={{ minHeight: 46, fontSize: 15, fontWeight: 700, borderRadius: R.inner }}>
             {t('Ask Dr. Macx')}
           </Button>
@@ -432,6 +450,7 @@ function Main({ session, onChange, onExit }) {
         />
       )}
       {talk && <VoiceDialog machineId={machineId} operator={operator} lang={lang} question={talk.question} preset={talk.preset} quick={quick} onClose={() => setTalk(null)} onDone={reload} />}
+      <TourHost firstVisit="kiosk" />
       <Snackbar open={!!toast} autoHideDuration={6000} onClose={() => setToast('')}>
         <Alert severity="error" onClose={() => setToast('')} variant="filled">{toast}</Alert>
       </Snackbar>
@@ -457,7 +476,7 @@ function TopBar({ row, live, now, presses, operator, onSwitch, onHandovers, onEx
   const setup = t(row.setup === 'premium' ? 'Premium' : 'Essential');
   const iconBtn = { border: `1px solid ${C.line}`, borderRadius: R.inner, width: 36, height: 36 };
   return (
-    <Card sx={{ ...panel, px: 1.5, py: 0.75, display: 'flex', alignItems: 'center', columnGap: 2.5, rowGap: 1, flexWrap: 'wrap' }}>
+    <Card data-tour="kiosk-top" sx={{ ...panel, px: 1.5, py: 0.75, display: 'flex', alignItems: 'center', columnGap: 2.5, rowGap: 1, flexWrap: 'wrap' }}>
       <Stack direction="row" gap={1.25} alignItems="center" minWidth={0}>
         <Box sx={{ width: 36, height: 36, borderRadius: R.inner, bgcolor: C.light, display: 'grid', placeItems: 'center', flex: 'none' }}>
           <BuildIcon sx={{ color: C.blue, fontSize: 22 }} />
@@ -497,7 +516,8 @@ function TopBar({ row, live, now, presses, operator, onSwitch, onHandovers, onEx
           </Button>
         </Tooltip>
       )}
-      <Stack direction="row" gap={0.75}>
+      <Stack direction="row" gap={0.75} alignItems="center">
+        <TourButton id="kiosk" />
         <Tooltip title={t('Shift handovers')}><IconButton aria-label={t('Shift handovers')} onClick={onHandovers} sx={iconBtn}><HandoverIcon fontSize="small" /></IconButton></Tooltip>
         <Tooltip title={t('Sign out')}><IconButton aria-label={t('Sign out')} onClick={onExit} sx={iconBtn}><LogoutIcon fontSize="small" /></IconButton></Tooltip>
       </Stack>
@@ -530,6 +550,28 @@ function Ring({ value, color, size = 148 }) {
 
 const hours = (sec) => (sec / 3600).toFixed(1);
 
+// Demo mode: make the press give its advice now (normally on the schedule in Settings › Dr. Macx Live).
+function AdviceNow({ machineId, lang, onDone }) {
+  const t = useT();
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    setBusy(true);
+    try {
+      await api(`/machines/${machineId}/soul/ask`, { method: 'POST', body: { lang } });
+      onDone();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Tooltip title={t('Demo: the press gives its advice now (normally on the schedule in Settings)')}>
+      <Button size="small" variant="outlined" onClick={go} disabled={busy} startIcon={busy ? <CircularProgress size={14} /> : <ChatIcon />} sx={{ minHeight: 28, py: 0, px: 1.25, fontSize: 12.5, borderRadius: '6px' }}>
+        {t('Advice now')}
+      </Button>
+    </Tooltip>
+  );
+}
+
 // The last 15 minutes next to the shift figure: moves within a minute when the press (or the simulation) changes.
 function Recent15({ now, shift, target, inline }) {
   const t = useT();
@@ -546,7 +588,7 @@ function Recent15({ now, shift, target, inline }) {
   );
 }
 
-function OeePanel({ row, ring, demo }) {
+function OeePanel({ row, ring, demo, lang, onAdvice }) {
   const t = useT();
   const sim = useSim(row); // simulation controls show only for dummy-generator presses (row.sim)
   const lv = (k) => LV[level(row[k], row.targets?.[k])];
@@ -558,7 +600,7 @@ function OeePanel({ row, ring, demo }) {
   ];
   const o = lv('oee');
   return (
-    <Card sx={{ ...panel, gridArea: 'oee', display: 'flex', gap: 2.5, alignItems: 'center', flexWrap: { xs: 'wrap', sm: 'nowrap' } }}>
+    <Card data-tour="kiosk-oee" sx={{ ...panel, gridArea: 'oee', display: 'flex', gap: 2.5, alignItems: 'center', flexWrap: { xs: 'wrap', sm: 'nowrap' } }}>
       <Ring value={row.oee} color={o?.ring ?? C.blue} size={ring} />
       <Box sx={{ flex: 1, minWidth: 0, flexBasis: { xs: '100%', sm: 0 } }}>
         <Stack direction="row" alignItems="center" gap={1} mb={1.25} flexWrap="wrap">
@@ -568,6 +610,7 @@ function OeePanel({ row, ring, demo }) {
               {t('Last 15 min')} <Recent15 now={row.last15.oee} shift={row.oee} target={row.targets?.oee} inline />
             </Typography>
           )}
+          {demo && <AdviceNow machineId={row.id} lang={lang} onDone={onAdvice} />}
           {demo && row.sim && <BreakdownButton sim={sim} />}
           {o && <Chip size="small" label={`${t(o.label)} · ${t('target')} ${row.targets?.oee?.target}%`} sx={{ height: 24, bgcolor: o.bg, color: o.color, fontWeight: 700 }} />}
         </Stack>
@@ -600,19 +643,35 @@ function OeePanel({ row, ring, demo }) {
   );
 }
 
-// The latest thing the press said, as a speech bubble (or its open question: tap to answer).
+// The latest thing the press said, as a speech bubble: tap it to read it all (tap again to fold it).
+// An open question gets an Answer button.
 function Bubble({ messages, question, talking, onReplay, onAnswer }) {
   const t = useT();
+  const [open, setOpen] = useState(false);
   const last = question ?? messages?.find((m) => m.kind !== 'operator');
+  useEffect(() => setOpen(false), [last?.id]);
   return (
     <Box
-      sx={{ position: 'relative', flex: 'none', bgcolor: question ? SEV.ask.bg : C.light, border: `1px solid ${question ? SEV.ask.line : '#BBDEFB'}`, borderRadius: R.inner, p: 1.25, pr: 6, cursor: question ? 'pointer' : 'default' }}
-      aria-live="polite" onClick={question ? onAnswer : undefined}
+      role="button" tabIndex={0} aria-expanded={open} aria-live="polite"
+      onClick={() => setOpen(!open)} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), setOpen(!open))}
+      sx={{
+        position: 'relative', flex: 'none', bgcolor: question ? SEV.ask.bg : C.light, border: `1px solid ${question ? SEV.ask.line : '#BBDEFB'}`,
+        borderRadius: R.inner, p: 1.25, pr: 6, cursor: 'pointer', maxHeight: open ? 'none' : undefined, '&:focus-visible': { outline: `2px solid ${C.blue}` },
+      }}
     >
-      {question && <Typography variant="caption" fontWeight={700} sx={{ color: SEV.ask.text }} component="div">{t('Question for you · tap to answer')}</Typography>}
-      <Typography sx={{ fontSize: 15, fontWeight: 600, lineHeight: 1.45, color: C.ink, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+      {question && <Typography variant="caption" fontWeight={700} sx={{ color: SEV.ask.text }} component="div">{t('Question for you')}</Typography>}
+      <Typography sx={{ fontSize: 15, fontWeight: 600, lineHeight: 1.45, color: C.ink, ...(!open && { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }) }}>
         {last?.text ?? t('Hello! I will tell you when something changes. Ask me anything with the buttons on the right.')}
       </Typography>
+      <Stack direction="row" alignItems="center" gap={1} mt={0.5}>
+        <Typography variant="caption" color="text.secondary">{t(open ? 'Tap to fold' : 'Tap to read all')}</Typography>
+        <Box flex={1} />
+        {question && (
+          <Button size="small" variant="contained" onClick={(ev) => (ev.stopPropagation(), onAnswer())} sx={{ minHeight: 28, py: 0, bgcolor: SEV.ask.color, '&:hover': { bgcolor: SEV.ask.text } }}>
+            {t('Answer')}
+          </Button>
+        )}
+      </Stack>
       {last && (
         <Tooltip title={t(talking ? 'Speaking…' : 'Say it again')}>
           <IconButton
@@ -707,7 +766,7 @@ function Progress({ row, live, now }) {
     </Box>
   );
   return (
-    <Card sx={{ ...panel, py: 1.25, gridArea: 'progress' }}>
+    <Card data-tour="kiosk-progress" sx={{ ...panel, py: 1.25, gridArea: 'progress' }}>
       <Stack direction="row" alignItems="center" gap={1.5}>
         <Typography fontWeight={700} fontSize={14} component="h2" noWrap>{t('Production progress')} · {t(live.shift.name)}</Typography>
         <Typography variant="caption" color="text.secondary" noWrap sx={{ flex: 1, minWidth: 0 }}>

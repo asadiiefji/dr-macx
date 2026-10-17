@@ -4,6 +4,7 @@ import NearIcon from '@mui/icons-material/ReportProblemOutlined';
 import BelowIcon from '@mui/icons-material/ErrorOutlined';
 import { MONO, STATUS, SKILLS, C, CATEGORIES, LEVELS, level } from './theme.js';
 import { useT } from './i18n.jsx';
+import { TourButton } from './Tour.jsx';
 
 export const pct = (v) => (v == null ? '—' : `${(v * 100).toFixed(1)}%`);
 export const num = (v) => (v == null ? '—' : v.toLocaleString());
@@ -31,14 +32,18 @@ export function Logo({ size = 30 }) {
   );
 }
 
-export function PageHeader({ overline, title, children }) {
+// tour = the id of this page's guided tour (Tour.jsx): adds a "Tutorial" button at the top right.
+export function PageHeader({ overline, title, tour, children }) {
   return (
-    <Stack direction="row" flexWrap="wrap" justifyContent="space-between" alignItems="flex-end" gap={2} mb={3}>
+    <Stack direction="row" flexWrap="wrap" justifyContent="space-between" alignItems="flex-end" gap={2} mb={3} data-tour="page-header">
       <Box>
         <Typography variant="overline" component="div">{overline}</Typography>
         <Typography variant="h4" component="h1">{title}</Typography>
       </Box>
-      {children}
+      <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
+        {children}
+        {tour && <TourButton id={tour} />}
+      </Stack>
     </Stack>
   );
 }

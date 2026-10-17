@@ -9,13 +9,13 @@ import Monitoring from './pages/Monitoring.jsx';
 import Machines from './pages/Machines.jsx';
 import SkillMatrix from './pages/SkillMatrix.jsx';
 import OeeCalculation from './pages/OeeCalculation.jsx';
+import PlannedBreaks from './pages/PlannedBreaks.jsx';
+import Settings from './pages/Settings.jsx';
 import DowntimeReasons from './pages/DowntimeReasons.jsx';
 import MachineDetail from './pages/MachineDetail.jsx';
-import { Operators, Users } from './pages/People.jsx';
+import { Operators } from './pages/People.jsx';
 
-// 3D bundle (three.js) loads only when the 3D Floor page is opened.
-const Floor = lazy(() => import('./pages/Floor.jsx'));
-// Machine Soul kiosk (3D character) runs full screen, outside the side menu.
+// Dr. Macx Live, the kiosk next to each press (3D character), runs full screen, outside the side menu.
 const Soul = lazy(() => import('./soul/Soul.jsx'));
 
 createRoot(document.getElementById('root')).render(
@@ -29,13 +29,13 @@ createRoot(document.getElementById('root')).render(
             <Route index element={<Dashboard />} />
             <Route path="monitoring" element={<Monitoring />} />
             <Route path="monitoring/:id" element={<MachineDetail />} />
-            <Route path="floor" element={<Suspense fallback={<LinearProgress />}><Floor /></Suspense>} />
             <Route path="machines" element={<Machines />} />
             <Route path="oee-calculation" element={<OeeCalculation />} />
+            <Route path="planned-breaks" element={<PlannedBreaks />} />
+            <Route path="settings" element={<Settings />} />
             <Route path="downtime-reasons" element={<DowntimeReasons />} />
             <Route path="operators" element={<Operators />} />
             <Route path="skills" element={<SkillMatrix />} />
-            <Route path="users" element={<Users />} />
           </Route>
         </Routes>
       </BrowserRouter>

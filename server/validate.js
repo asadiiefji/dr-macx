@@ -1,7 +1,6 @@
 // Request-body validation for master data. Each parser returns { value } or { error }.
 import { FRAMES, SETUPS, pressDefaults, sensorsFor } from './sensors.js';
 
-export const ROLES = ['admin', 'supervisor', 'operator'];
 export const CATEGORIES = ['Breakdown', 'Changeover', 'Material', 'Minor stop', 'Quality', 'Operator break', 'Other'];
 // Reasons in this category may only be given to a stop that touches a scheduled break.
 export const BREAK_CATEGORY = 'Operator break';
@@ -17,7 +16,6 @@ export const DEFAULT_TARGETS = {
 // Kepware address: Channel.Device[.Group...].Tag
 const TAG_RE = /^[\w-]+(\.[\w-]+){2,}$/;
 const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const str = (v, max = 120) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 
@@ -86,13 +84,6 @@ function operator(b) {
   return { value };
 }
 
-function user(b) {
-  const value = { name: str(b.name), email: str(b.email, 200).toLowerCase(), role: b.role, active: b.active !== false };
-  if (!value.name) return { error: 'Name is required.' };
-  if (!EMAIL_RE.test(value.email)) return { error: 'Enter a valid email address.' };
-  if (!ROLES.includes(value.role)) return { error: `Role must be one of: ${ROLES.join(', ')}.` };
-  return { value };
-}
 
 // Downtime reason. alarmCode (optional) = the PLC alarm that suggests this reason for a new stop.
 // type planned = scheduled stop (maintenance, meeting, QC patrol): excluded from planned production time, so it never lowers OEE.
@@ -126,7 +117,10 @@ export function parseSettings(b) {
   // minutes before/after a break in which a stop may still be given an operator-break reason
   const breakToleranceMin = b.breakToleranceMin === undefined || b.breakToleranceMin === '' ? 5 : Number(b.breakToleranceMin);
   if (!(breakToleranceMin >= 0 && breakToleranceMin <= 30)) return { error: 'Break tolerance must be 0–30 minutes.' };
-  return { value: { breaks, breakToleranceMin } };
+  // how often Dr. Macx Live gives its own advice (Gemini) at each press: 0 = never, else 15–480 minutes
+  const adviceEveryMin = b.adviceEveryMin === undefined || b.adviceEveryMin === '' ? 60 : Number(b.adviceEveryMin);
+  if (!(adviceEveryMin === 0 || (adviceEveryMin >= 15 && adviceEveryMin <= 480))) return { error: 'Advice interval must be 0 (off) or 15–480 minutes.' };
+  return { value: { breaks, breakToleranceMin, adviceEveryMin } };
 }
 
 // Confirming (or changing) the reason of one downtime event.
@@ -142,6 +136,5 @@ export function parseConfirm(b) {
 export const schemas = {
   machines: { parse: machine, unique: [['code', 'Machine code']] },
   operators: { parse: operator, unique: [['code', 'Employee ID']] },
-  users: { parse: user, unique: [['email', 'Email']] },
   reasons: { parse: reason, unique: [['code', 'Reason code'], ['alarmCode', 'Alarm code']] },
 };

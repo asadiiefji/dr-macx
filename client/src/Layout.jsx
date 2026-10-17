@@ -8,19 +8,21 @@ import MonitorIcon from '@mui/icons-material/MonitorHeartOutlined';
 import PrecisionIcon from '@mui/icons-material/PrecisionManufacturingOutlined';
 import BadgeIcon from '@mui/icons-material/BadgeOutlined';
 import GridIcon from '@mui/icons-material/GridOnOutlined';
-import ShieldIcon from '@mui/icons-material/AdminPanelSettingsOutlined';
 import TuneIcon from '@mui/icons-material/TuneOutlined';
 import ReasonIcon from '@mui/icons-material/RuleOutlined';
-import FloorIcon from '@mui/icons-material/ViewInArOutlined';
+import BreakIcon from '@mui/icons-material/FreeBreakfastOutlined';
+import SettingsIcon from '@mui/icons-material/SettingsOutlined';
 import SoulIcon from '@mui/icons-material/FaceRetouchingNaturalOutlined';
 import { Logo } from './ui.jsx';
 import { useGet } from './api.js';
 import { C } from './theme.js';
+import { TourHost } from './Tour.jsx';
 
 const WIDTH = 248;
+// [path, label, icon, featured]. Dr. Macx Live (the talking kiosk at each press) is the main feature: second, highlighted.
 const NAV = [
-  ['OVERVIEW', [['/', 'Dashboard', DashboardIcon], ['/monitoring', 'Machine monitoring', MonitorIcon], ['/floor', '3D Floor', FloorIcon], ['/soul', 'Machine Soul (kiosk)', SoulIcon]]],
-  ['MASTER DATA', [['/machines', 'Machines', PrecisionIcon], ['/oee-calculation', 'OEE calculation', TuneIcon], ['/downtime-reasons', 'Downtime reasons', ReasonIcon], ['/operators', 'Operators', BadgeIcon], ['/skills', 'Skill matrix', GridIcon], ['/users', 'Users & roles', ShieldIcon]]],
+  ['OVERVIEW', [['/', 'Dashboard', DashboardIcon], ['/soul', 'Dr. Macx Live', SoulIcon, true], ['/monitoring', 'Monitoring', MonitorIcon]]],
+  ['MASTER DATA', [['/machines', 'Machines', PrecisionIcon], ['/oee-calculation', 'OEE calculation', TuneIcon], ['/planned-breaks', 'Planned breaks', BreakIcon], ['/downtime-reasons', 'Downtime reasons', ReasonIcon], ['/operators', 'Operators', BadgeIcon], ['/skills', 'Skill matrix', GridIcon], ['/settings', 'Settings', SettingsIcon]]],
 ];
 
 export default function Layout() {
@@ -28,18 +30,28 @@ export default function Layout() {
   const nav = (
     <Box component="nav" aria-label="Main" sx={{ p: 1.5 }}>
       {NAV.map(([section, items]) => (
-        <List key={section} subheader={<ListSubheader sx={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '0.08em', lineHeight: '32px', color: 'text.secondary' }}>{section}</ListSubheader>}>
-          {items.map(([to, label, Icon]) => (
+        <List key={section} data-tour={section === 'MASTER DATA' ? 'nav-master' : undefined} subheader={<ListSubheader sx={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '0.08em', lineHeight: '32px', color: 'text.secondary' }}>{section}</ListSubheader>}>
+          {items.map(([to, label, Icon, featured]) => (
             <ListItemButton
               key={to}
               component={NavLink}
               to={to}
               end={to === '/'}
               onClick={() => setOpen(false)}
-              sx={{ borderRadius: 3, minHeight: 46, mb: 0.5, color: C.muted, '&.active': { bgcolor: C.light, color: C.blueDark, fontWeight: 700, '& .MuiListItemIcon-root': { color: C.blue } } }}
+              data-tour={`nav-${to.slice(1)}`}
+              sx={{
+                borderRadius: '10px', minHeight: 42, mb: 0.5, color: C.muted,
+                '&.active': { bgcolor: C.light, color: C.blueDark, fontWeight: 700, '& .MuiListItemIcon-root': { color: C.blue } },
+                ...(featured && {
+                  color: '#FFFFFF', fontWeight: 700, background: `linear-gradient(135deg, ${C.blue}, #7C3AED)`, boxShadow: '0 4px 12px rgba(21,101,192,0.25)',
+                  '&:hover': { background: `linear-gradient(135deg, ${C.blueDark}, #6D28D9)` },
+                  '& .MuiListItemIcon-root': { color: '#FFFFFF' },
+                }),
+              }}
             >
-              <ListItemIcon sx={{ minWidth: 38, color: 'inherit' }}><Icon /></ListItemIcon>
-              <ListItemText primary={label} slotProps={{ primary: { sx: { fontWeight: 'inherit' } } }} />
+              <ListItemIcon sx={{ minWidth: 36, color: 'inherit' }}><Icon /></ListItemIcon>
+              <ListItemText primary={label} slotProps={{ primary: { sx: { fontWeight: 'inherit', fontSize: 14.5 } } }} />
+              {featured && <Box component="span" sx={{ fontSize: 10.5, fontWeight: 800, px: 0.75, py: 0.25, borderRadius: '6px', bgcolor: 'rgba(255,255,255,0.22)' }}>AI</Box>}
             </ListItemButton>
           ))}
         </List>
@@ -68,6 +80,7 @@ export default function Layout() {
       <Box component="main" sx={{ flex: 1, minWidth: 0, p: { xs: 2, md: 4 } }}>
         <Toolbar />
         <Outlet />
+        <TourHost firstVisit="app" />
       </Box>
     </Box>
   );
@@ -88,7 +101,7 @@ function AiModels() {
   }, [reload]);
   if (!data) return null;
   return (
-    <List subheader={<ListSubheader sx={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '0.08em', lineHeight: '32px', color: 'text.secondary' }}>AI MODELS</ListSubheader>}>
+    <List data-tour="ai-models" subheader={<ListSubheader sx={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '0.08em', lineHeight: '32px', color: 'text.secondary' }}>AI MODELS</ListSubheader>}>
       {Object.values(data).map((m) => {
         const st = AI_STATE[!m.configured ? 'off' : m.state ?? 'idle'] ?? AI_STATE.idle;
         const tip = m.message || (m.state === 'ok' ? `Last call worked at ${new Date(m.at).toLocaleTimeString()}` : m.configured ? 'Not used yet since the server started' : 'Set GEMINI_API_KEY');

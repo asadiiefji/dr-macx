@@ -1,4 +1,4 @@
-// Operators and Users & roles share one simple master-data page.
+// Operators: a simple master-data page.
 import { useState } from 'react';
 import {
   Alert, Button, Card, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, MenuItem,
@@ -9,13 +9,7 @@ import DeleteIcon from '@mui/icons-material/DeleteOutlined';
 import { api, useCollection } from '../api.js';
 import { PageHeader, Mono } from '../ui.jsx';
 
-const ROLES = [
-  { value: 'admin', label: 'Administrator' },
-  { value: 'supervisor', label: 'Supervisor' },
-  { value: 'operator', label: 'Operator' },
-];
-
-export function MasterPage({ col, title, noun, fields, columns, sortKey, note, section }) {
+export function MasterPage({ col, title, noun, fields, columns, sortKey, note, section, tour }) {
   const { rows, error, reload } = useCollection(col);
   const [edit, setEdit] = useState(null); // form values, id set when editing
   const [formError, setFormError] = useState('');
@@ -47,7 +41,7 @@ export function MasterPage({ col, title, noun, fields, columns, sortKey, note, s
           {add}
         </Stack>
       ) : (
-        <PageHeader overline="MASTER DATA" title={title}>{add}</PageHeader>
+        <PageHeader overline="MASTER DATA" title={title} tour={tour}>{add}</PageHeader>
       )}
       {note && <Alert severity="info" sx={{ mb: 2 }}>{note}</Alert>}
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
@@ -121,6 +115,7 @@ export function MasterPage({ col, title, noun, fields, columns, sortKey, note, s
 export const Operators = () => (
   <MasterPage
     col="operators"
+    tour="operators"
     title="Operators"
     noun="Operator"
     sortKey="code"
@@ -132,27 +127,6 @@ export const Operators = () => (
     columns={[
       { key: 'code', label: 'Employee ID', render: (r) => <Mono fontWeight={600}>{r.code}</Mono> },
       { key: 'name', label: 'Name' },
-    ]}
-  />
-);
-
-export const Users = () => (
-  <MasterPage
-    col="users"
-    title="Users & roles"
-    noun="User"
-    sortKey="name"
-    note="Login is not enabled yet. Users and their roles are stored now so access control can be switched on later."
-    fields={[
-      { key: 'name', label: 'Full name', required: true },
-      { key: 'email', label: 'Email', type: 'email', required: true },
-      { key: 'role', label: 'Role', options: ROLES, default: 'operator', required: true },
-      { key: 'active', label: 'Active', type: 'switch', default: true },
-    ]}
-    columns={[
-      { key: 'name', label: 'Name' },
-      { key: 'email', label: 'Email', render: (r) => <Mono>{r.email}</Mono> },
-      { key: 'role', label: 'Role', render: (r) => ROLES.find((x) => x.value === r.role)?.label ?? r.role },
     ]}
   />
 );

@@ -9,7 +9,7 @@ import { pressDefaults, toOeeTags, sensorsFor, judge, valueOf, motorState, ownRe
 import { minuteOf, newMinute, addReading, minuteRow, windowOee } from './telemetry.js';
 import { insertRows, bqEnabled } from './bq.js';
 
-export const DEFAULT_SETTINGS = { breaks: [], breakToleranceMin: 5 };
+export const DEFAULT_SETTINGS = { breaks: [], breakToleranceMin: 5, adviceEveryMin: 60 };
 
 const logErr = (e) => console.error('firestore write failed:', e.message);
 

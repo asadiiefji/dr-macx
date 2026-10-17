@@ -10,7 +10,7 @@ import { defaultTags, pressDefaults, toOeeTags } from './sensors.js';
 import { minuteOf, newMinute, addReading, minuteRow } from './telemetry.js';
 import { bqEnabled, insertRows, query } from './bq.js';
 
-// Two stamping presses: one with the Premium sensor set, one with the low-cost Essential set.
+// Four stamping presses: Premium and Essential sensor sets, straight-side and C-frame.
 const press = (m) => ({ ...m, sensorTags: defaultTags(pressDefaults(m), 'Channel1', m.kepware.device), targets: DEFAULT_TARGETS });
 const machines = {
   'prs-03': press({
@@ -22,6 +22,16 @@ const machines = {
     code: 'PRS-05', name: 'Press 05 · JH21-160 C-frame', line: 'Line 3', area: 'Stamping', idealCycleTime: 2.5, source: 'dummy',
     setup: 'essential', frameType: 'c-frame', ratedTonnage: 160, nodes: 2, nodeTolerancePct: 5,
     kepware: { endpoint: 'opc.tcp://192.168.1.11:49320', channel: 'Channel1', device: 'Press05' },
+  }),
+  'prs-07': press({
+    code: 'PRS-07', name: 'Press 07 · 250T straight-side', line: 'Line 1', area: 'Stamping', idealCycleTime: 4, source: 'dummy',
+    setup: 'premium', frameType: 'straight-side', ratedTonnage: 250, nodes: 4, nodeTolerancePct: 5,
+    kepware: { endpoint: 'opc.tcp://192.168.1.12:49320', channel: 'Channel1', device: 'Press07' },
+  }),
+  'prs-09': press({
+    code: 'PRS-09', name: 'Press 09 · JH21-110 C-frame', line: 'Line 3', area: 'Stamping', idealCycleTime: 2, source: 'dummy',
+    setup: 'essential', frameType: 'c-frame', ratedTonnage: 110, nodes: 2, nodeTolerancePct: 5,
+    kepware: { endpoint: 'opc.tcp://192.168.1.13:49320', channel: 'Channel1', device: 'Press09' },
   }),
 };
 
@@ -36,12 +46,8 @@ const operators = {
 const skills = {
   'prs-03': { 'op-001': 3, 'op-002': 2, 'op-003': 1 },
   'prs-05': { 'op-003': 3, 'op-004': 2, 'op-001': 1 },
-};
-
-const users = {
-  'usr-admin': { name: 'Asadi', email: 'admin@drmacx.demo', role: 'admin' },
-  'usr-supervisor': { name: 'Rina Wijaya', email: 'supervisor@drmacx.demo', role: 'supervisor' },
-  'usr-operator': { name: 'Budi Santoso', email: 'budi.santoso@drmacx.demo', role: 'operator' },
+  'prs-07': { 'op-002': 3, 'op-001': 2, 'op-004': 1 },
+  'prs-09': { 'op-004': 3, 'op-003': 2, 'op-002': 2 },
 };
 
 // Downtime reasons. alarmCode links a PLC alarm (see dummy.js) to the reason suggested for a new stop.
@@ -116,7 +122,7 @@ function simulate(id, raw) {
   const m = pressDefaults({ ...raw, id });
   const end = currentShift().start;
   const start = dayStart(end - 30 * 86400e3);
-  const rnd = mulberry32(id === 'prs-03' ? 42 : 7);
+  const rnd = mulberry32({ 'prs-03': 42, 'prs-05': 7, 'prs-07': 19, 'prs-09': 23 }[id] ?? 99); // a different, repeatable history per press
   const gen = newDummy();
   const rec = newRecorder();
   const events = [];
@@ -156,7 +162,7 @@ function simulate(id, raw) {
 
 const writes = [];
 const reasonDocs = Object.fromEntries(reasons.map((r) => [r.code, r]));
-for (const [col, docs] of Object.entries({ machines, operators, users, reasons: reasonDocs })) {
+for (const [col, docs] of Object.entries({ machines, operators, reasons: reasonDocs })) {
   for (const [id, body] of Object.entries(docs)) {
     const { value, error } = schemas[col].parse(body);
     if (error) throw new Error(`${col}/${id}: ${error}`);
@@ -170,7 +176,7 @@ for (const [machineId, levels] of Object.entries(skills)) {
 }
 writes.push(['settings/oee', parseSettings(settings).value]);
 await commit(writes);
-console.log(`Seeded ${Object.keys(machines).length} presses, 4 operators, skills, 3 users, ${reasons.length} downtime reasons and planned breaks.`);
+console.log(`Seeded ${Object.keys(machines).length} presses, 4 operators, skills, ${reasons.length} downtime reasons and planned breaks.`);
 
 for (const [id, m] of Object.entries(machines)) {
   // never overwrite recorded history: Firestore and BigQuery are each filled only when empty for this press

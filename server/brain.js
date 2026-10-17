@@ -69,6 +69,15 @@ export function startBrain({ db, live, say, context, resolve }) {
     await say(row.id, { kind: 'risk', text: riskText(r, row.idealCycleTime), emotion: r.reachable ? 'worried' : 'sad', data: r });
   }
 
+  // Advice on a schedule (Settings › Dr. Macx Live, default hourly; 0 = off): what I would tell the operator now.
+  async function advice(row, everyMs) {
+    if ((await said(row.id, 'advice', everyMs)).length) return; // given recently (also by the Ask button)
+    const ctx = await context(row.id);
+    const out = await soulAsk(ctx, 'en');
+    const emotion = Object.values(ctx.now?.sensorStatus ?? {}).includes('alarm') ? 'worried' : 'calm';
+    await say(row.id, { kind: 'advice', text: out.say, emotion, data: { findings: out.findings, actions: out.actions, part: out.part || null, node: out.node || null, auto: true } });
+  }
+
   // A sensor out of limits: not again within 30 min unless it got worse (also across restarts).
   async function anomaly(row, m, a) {
     const recent = (await said(row.id, 'anomaly', ANOMALY.repeatMs)).find((x) => x.data?.sensor === a.sensor.id);
@@ -94,6 +103,12 @@ export function startBrain({ db, live, say, context, resolve }) {
       if (row.status !== 'break' && now - st.riskAt >= RISK_EVERY_MS) {
         const r = targetRisk(row);
         if (r?.atRisk) risk(row, r, st).catch(log('risk'));
+      }
+
+      const everyMs = (live.settings().adviceEveryMin ?? 60) * 60e3;
+      if (everyMs && row.status !== 'break' && now - (st.adviceCheck ?? 0) >= 60e3) {
+        st.adviceCheck = now; // look at most once a minute
+        advice(row, everyMs).catch(log('advice'));
       }
 
       // hourly: the hour that just ended, once its bucket is written (flush runs every minute)

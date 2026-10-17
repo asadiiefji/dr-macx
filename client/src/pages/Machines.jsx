@@ -42,7 +42,7 @@ export default function Machines() {
 
   return (
     <>
-      <PageHeader overline="MASTER DATA" title="Machines">
+      <PageHeader overline="MASTER DATA" title="Machines" tour="machines">
         <Button variant="contained" color="secondary" startIcon={<AddIcon />} onClick={() => setEdit(BLANK)}>Add machine</Button>
       </PageHeader>
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
@@ -79,7 +79,7 @@ export default function Machines() {
           </TableBody>
         </Table>
       </TableContainer>
-      <Typography variant="body2" color="text.secondary" mt={1}>Operators = people at level 2 (Can run) or higher. Live values are under Machine monitoring.</Typography>
+      <Typography variant="body2" color="text.secondary" mt={1}>Operators = people at level 2 (Can run) or higher. Live values are under Monitoring.</Typography>
 
       {edit && (
         <MachineDialog

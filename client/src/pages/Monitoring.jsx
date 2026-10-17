@@ -1,37 +1,32 @@
-import { useState } from 'react';
 import { Link as RouterLink } from 'react-router';
 import {
   Alert, Box, Button, Card, CardActionArea, CardActions, CardContent, Divider, Grid, Stack, Typography,
 } from '@mui/material';
-import PendingIcon from '@mui/icons-material/PendingActionsOutlined';
+import HistoryIcon from '@mui/icons-material/QueryStatsOutlined';
 import { useLive } from '../api.js';
-import { Simulate } from '../Simulate.jsx';
 import { PageHeader, StatusChip, FactorBar, LevelChip, Mono, pct, num, duration } from '../ui.jsx';
 import { C, FACTORS, LEVELS, level } from '../theme.js';
 import { ShiftLine } from './Dashboard.jsx';
-import { PendingDialog } from '../StopConfirm.jsx';
 
 export default function Monitoring() {
   const { live, error } = useLive();
-  const [pendingFor, setPendingFor] = useState(null);
   return (
     <>
-      <PageHeader overline="OVERVIEW" title="Machine monitoring">{live && <ShiftLine live={live} />}</PageHeader>
+      <PageHeader overline="OVERVIEW" title="Monitoring" tour="monitoring">{live && <ShiftLine live={live} />}</PageHeader>
       {error && <Alert severity="error" sx={{ mb: 2 }}>Live data unavailable: {error}</Alert>}
       {live && !live.machines.length && <Typography color="text.secondary">No machines yet. Add them under Master data › Machines.</Typography>}
       <Grid container spacing={2}>
         {live?.machines.map((m) => (
           <Grid key={m.id} size={{ xs: 12, sm: 6, lg: 4, xl: 3 }}>
-            <MachineCard m={m} now={live.now} onPending={() => setPendingFor(m)} />
+            <MachineCard m={m} now={live.now} />
           </Grid>
         ))}
       </Grid>
-      {pendingFor && <PendingDialog machine={pendingFor} onClose={() => setPendingFor(null)} />}
     </>
   );
 }
 
-function MachineCard({ m, now, onPending }) {
+function MachineCard({ m, now }) {
   const off = m.status === 'disconnected' || m.status === 'inactive';
   const k = level(m.oee, m.targets.oee);
   return (
@@ -75,15 +70,11 @@ function MachineCard({ m, now, onPending }) {
               </Box>
             ))}
           </Stack>
-          <Typography variant="body2" fontWeight={700} color="primary" mt={2}>History & downtime analysis →</Typography>
         </CardContent>
       </CardActionArea>
 
-      <CardActions sx={{ flexDirection: 'column', alignItems: 'stretch', gap: 1.5, px: 2, pb: 2, pt: 1.5, borderTop: `1px solid ${C.line}`, '& > :not(style) ~ :not(style)': { ml: 0 } }}>
-        <Button fullWidth variant={m.pending ? 'contained' : 'outlined'} color={m.pending ? 'warning' : 'primary'} startIcon={<PendingIcon />} onClick={onPending}>
-          {m.pending ? `${m.pending} stop${m.pending > 1 ? 's' : ''} to confirm` : 'No stops to confirm'}
-        </Button>
-        {m.sim && <Simulate m={m} />}
+      <CardActions sx={{ px: 2, pb: 2, pt: 1.5, borderTop: `1px solid ${C.line}` }}>
+        <Button fullWidth variant="outlined" startIcon={<HistoryIcon />} component={RouterLink} to={`/monitoring/${m.id}?tab=history`}>History analysis</Button>
       </CardActions>
     </Card>
   );

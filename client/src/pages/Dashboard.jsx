@@ -56,7 +56,7 @@ export default function Dashboard() {
 
   return (
     <>
-      <PageHeader overline="OVERVIEW" title="Dashboard"><ShiftLine live={live} /></PageHeader>
+      <PageHeader overline="OVERVIEW" title="Dashboard" tour="dashboard"><ShiftLine live={live} /></PageHeader>
       {!machines.length && (
         <Alert severity="info" sx={{ mb: 3 }}>
           No machines yet. <Link component={RouterLink} to="/machines">Add a machine</Link> with the dummy generator to see live OEE.

@@ -24,4 +24,3 @@ export async function speak(text, lang) {
   return audio;
 }
 
-export const TTS_LANGS = Object.keys(VOICE);
