@@ -51,7 +51,16 @@ export function soulRoutes(app, { db, live, list, resolve, eventsSince, repeatWi
         status: row.status, motor: row.motor, sensors: row.readings, sensorStatus: row.sensorStatus,
         oeePct: pct(row.oee), availabilityPct: pct(row.availability), performancePct: pct(row.performance), qualityPct: pct(row.quality),
         targetsPct: row.targets, good: row.total - row.ng, total: row.total, nc: row.ng,
-        plannedByNow: row.plan?.toNow, plannedThisShift: row.plan?.shift,
+        // the same shift numbers the kiosk shows: quote these, never other totals
+        shiftForecast: row.forecast && {
+          goodSoFar: row.forecast.good, dueByNow: row.forecast.toNow, gapToPlan: row.forecast.gap, schedulePlan: row.forecast.plan,
+          target: row.forecast.target, projectedEndOfShift: row.forecast.projected, bestStillPossible: row.forecast.best, targetReachable: row.forecast.reachable,
+        },
+      },
+      openItems: {
+        stopsWaitingThisShift: pendingRaw.filter((e) => e.start >= snap.shift.start).length,
+        stopsWaitingFromEarlierShifts: pendingRaw.filter((e) => e.start < snap.shift.start).length,
+        note: 'Talk about this shift. Do not call the shift smooth while stops wait for a reason or the target is short.',
       },
       waitingForReason: waiting.map((e) => ({ at: new Date(e.start).toISOString(), minutes: Math.round(e.minutes * 10) / 10, alarmCode: e.alarmCode, suggested: e.reason, repeatedIn24h: e.repeatCount })),
       stopsLast24h: Object.values(byReason).sort((a, b) => b.minutes - a.minutes),
@@ -84,8 +93,13 @@ export function soulRoutes(app, { db, live, list, resolve, eventsSince, repeatWi
   // What the press has said, newest first, in the kiosk language (translated once, then cached on the message).
   app.get('/api/machines/:id/soul', async (req, res) => {
     const lang = langOf(req.query.lang);
-    const limit = Math.min(100, Number(req.query.limit) || 40);
-    const snap = await messages(req.params.id).orderBy('at', 'desc').limit(limit).get();
+    const limit = Math.min(200, Number(req.query.limit) || 40);
+    const from = Number(req.query.from);
+    const to = Number(req.query.to);
+    // optional time range (history popup): messages in [from, to)
+    let q = messages(req.params.id);
+    if (Number.isFinite(from) && Number.isFinite(to)) q = q.where('at', '>=', from).where('at', '<', to);
+    const snap = await q.orderBy('at', 'desc').limit(limit).get();
     const docs = snap.docs.map((d) => ({ ref: d.ref, id: d.id, ...d.data() }));
     const missing = docs.filter((d) => d.lang !== lang && !d.i18n?.[lang]);
     if (missing.length) {
@@ -133,6 +147,30 @@ export function soulRoutes(app, { db, live, list, resolve, eventsSince, repeatWi
       res.json({ operator: operatorMsg, reply });
     } catch (e) {
       fail(res, 'understand that')(e);
+    }
+  });
+
+  // Kiosk user-interface labels in the kiosk language (Gemini, cached in memory per language and text).
+  // ponytail: in-memory cache, refilled after a restart (the kiosk also keeps its own copy).
+  const uiCache = new Map();
+  app.post('/api/translate', async (req, res) => {
+    const lang = langOf(req.body?.lang);
+    const texts = Array.isArray(req.body?.texts) ? req.body.texts.filter((x) => typeof x === 'string' && x.length <= 600).slice(0, 300) : [];
+    if (lang === 'en' || !texts.length) return res.json(Object.fromEntries(texts.map((x) => [x, x])));
+    const key = (x) => `${lang}\u0000${x}`;
+    const missing = [...new Set(texts.filter((x) => !uiCache.has(key(x))))];
+    try {
+      for (let i = 0; i < missing.length; i += 80) {
+        const part = missing.slice(i, i + 80);
+        const out = await translateTexts(part, lang, 'ui');
+        // a translation that lost a {placeholder} is unusable: keep the English
+        const kept = (x, y) => y && (x.match(/\{\w+\}/g) ?? []).every((p) => y.includes(p));
+        part.forEach((x, j) => uiCache.set(key(x), kept(x, out[j]) ? out[j] : x));
+      }
+      if (uiCache.size > 20000) uiCache.clear();
+      res.json(Object.fromEntries(texts.map((x) => [x, uiCache.get(key(x)) ?? x])));
+    } catch (e) {
+      fail(res, 'translate the screen')(e);
     }
   });
 

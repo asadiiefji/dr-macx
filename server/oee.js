@@ -73,6 +73,18 @@ export function schedulePlan(shift, now, breaks, plannedStopSec, idealCycleTime)
   return { toNow: Math.max(0, Math.floor(toNowSec / idealCycleTime)), shift: Math.max(0, Math.floor(shiftSec / idealCycleTime)) };
 }
 
+// The shift numbers everyone quotes (dashboard, the press's voice, handover): good so far, the schedule plan
+// (planned time ÷ ideal cycle), the target (plan × OEE target), the projected end at the current pace, and the
+// best still possible at the ideal cycle with no more stops.
+export function shiftForecast({ good, plannedSec, plan, idealCycleTime, oeeTarget = 85 }) {
+  const target = Math.round((plan.shift * oeeTarget) / 100);
+  const remainingSec = Math.max(0, (plan.shift - plan.toNow) * idealCycleTime);
+  const rate = plannedSec ? good / plannedSec : 0; // good pieces per planned second so far
+  const projected = Math.round(good + rate * remainingSec);
+  const best = Math.round(good + remainingSec / idealCycleTime);
+  return { good, plan: plan.shift, toNow: plan.toNow, target, gap: good - plan.toNow, projected, best, reachable: best >= target, remainingSec, paceSec: rate ? 1 / rate : null };
+}
+
 // What the machine was doing over [from, to]: run, unplanned or planned stop (with reason), planned break,
 // or no data (no recorded hour). events need { id, start, end, planned, reason, ... } (withReasons output).
 export function buildTimeline(from, to, events, breaks, recordedHours) {

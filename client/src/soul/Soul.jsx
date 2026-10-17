@@ -1,6 +1,7 @@
 // Machine Soul: the kiosk screen next to a press. Pick the press, sign in with an employee number, then a full-screen
 // dashboard: the press speaks for itself (3D character + voice), shows OEE, schedule vs actual, events, sensors and anatomy.
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link as RouterLink } from 'react-router';
 import {
   Alert, Box, Button, Card, CardActionArea, CardContent, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
   DialogTitle, Grid, IconButton, InputAdornment, LinearProgress, MenuItem, Snackbar, Stack, Tab, Tabs, TextField, Tooltip,
@@ -19,6 +20,10 @@ import CalendarIcon from '@mui/icons-material/CalendarMonthOutlined';
 import ArrowIcon from '@mui/icons-material/ArrowForwardRounded';
 import HandoverIcon from '@mui/icons-material/HistoryEduOutlined';
 import BuildIcon from '@mui/icons-material/PrecisionManufacturingOutlined';
+import BackIcon from '@mui/icons-material/ArrowBackRounded';
+import DemoIcon from '@mui/icons-material/ScienceOutlined';
+import UpIcon from '@mui/icons-material/NorthEastRounded';
+import DownIcon from '@mui/icons-material/SouthEastRounded';
 import { api, useCollection, useGet, useLive } from '../api.js';
 import { Logo, StatusChip, duration, num } from '../ui.jsx';
 import { C, LEVELS, level } from '../theme.js';
@@ -27,8 +32,9 @@ import { sensorsFor, useSensorCatalog, valueOf } from '../sensors.js';
 import PressCharacter, { EMOTIONS } from './PressCharacter.jsx';
 import { BCP, useVoice } from './useVoice.js';
 import Handovers from '../Handovers.jsx';
+import { Dual, I18nProvider, useLang, useT } from '../i18n.jsx';
 import { BreakdownButton, FactorSim, useSim } from '../Simulate.jsx';
-import { AnatomyTab, EventDetail, EventFilter, EventList, FullScreen, SEV, SensorsTab, buildEvents, hhmm } from './Panels.jsx';
+import { AnatomyTab, BulkConfirm, EventDetail, EventFilter, EventList, HistoryPopup, Popup, SEV, SensorsTab, buildEvents, hhmm } from './Panels.jsx';
 
 const SESSION = 'drmacx.soul';
 const load = () => {
@@ -58,13 +64,21 @@ const LV = Object.fromEntries(Object.entries(LEVELS).map(([k, v]) => [k, { ...v,
 export default function Soul() {
   const [session, setSession] = useState(load);
   const save = (v) => (store(v), setSession(v));
-  if (!session.machineId || !session.operator) return <Gate session={session} onDone={save} />;
-  return <Main key={session.machineId} session={session} onChange={save} onExit={() => save({ lang: session.lang })} />;
+  // every label on this screen follows the kiosk language (i18n.jsx)
+  return (
+    <I18nProvider lang={session.lang ?? 'en'}>
+      {!session.machineId || !session.operator
+        ? <Gate session={session} onDone={save} />
+        : <Main key={session.machineId} session={session} onChange={save} onExit={() => save({ lang: session.lang })} />}
+    </I18nProvider>
+  );
 }
 
 // --- Step 1 + 2: pick the press, verify the employee number ---
 function Gate({ session, onDone }) {
   const machines = useCollection('machines');
+  const operators = useCollection('operators');
+  const skills = useCollection('skills');
   const [machineId, setMachineId] = useState(session.machineId ?? '');
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
@@ -81,31 +95,41 @@ function Gate({ session, onDone }) {
     }
   };
   const active = machines.rows.filter((m) => m.active !== false).sort((a, b) => a.code.localeCompare(b.code));
+  // a demo sign-in: the first active operator cleared (skill 2+) on the picked press (or on the first press)
+  const cleared = (pressId) => operators.rows
+    .filter((o) => o.active !== false && skills.rows.some((k) => k.operatorId === o.id && k.machineId === pressId && k.level >= 2))
+    .sort((a, b) => a.code.localeCompare(b.code))[0];
+  const demoPress = machineId ? active.find((m) => m.id === machineId) : active.find((m) => cleared(m.id));
+  const demo = demoPress && cleared(demoPress.id);
+  const t = useT();
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: 'background.default', display: 'grid', placeItems: 'center', p: 2 }}>
       <Card sx={{ width: '100%', maxWidth: 720 }}>
         <CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
-          <Logo />
-          <Typography variant="h4" component="h1" mt={3}>Machine Soul</Typography>
-          <Typography color="text.secondary" mb={3}>Pick the press this screen stands next to, then sign in with your employee number.</Typography>
-          <Typography variant="overline" component="h2">1 · PRESS</Typography>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
+            <Logo />
+            <Button component={RouterLink} to="/" startIcon={<BackIcon />}>{t('Back to Dr. Macx')}</Button>
+          </Stack>
+          <Typography variant="h4" component="h1" mt={3}>{t('Machine Soul')}</Typography>
+          <Typography color="text.secondary" mb={3}>{t('Pick the press this screen stands next to, then sign in with your employee number.')}</Typography>
+          <Typography variant="overline" component="h2">1 · {t('Press')}</Typography>
           <Grid container spacing={1.5} mb={3}>
             {active.map((m) => (
               <Grid key={m.id} size={{ xs: 12, sm: 6 }}>
                 <Card sx={{ borderColor: machineId === m.id ? C.blue : C.line, borderWidth: 2, bgcolor: machineId === m.id ? C.light : '#fff' }}>
                   <CardActionArea onClick={() => setMachineId(m.id)} aria-pressed={machineId === m.id} sx={{ p: 2, minHeight: 88 }}>
                     <Typography fontWeight={800} fontSize={18}>{m.code}</Typography>
-                    <Typography variant="body2">{m.name}</Typography>
-                    <Typography variant="caption" color="text.secondary">{m.line} · {m.setup === 'premium' ? 'Premium' : 'Essential'} sensors</Typography>
+                    <Typography variant="body2">{m.ratedTonnage ?? '—'} t · {t(FRAME[m.frameType] ?? m.frameType ?? '')}</Typography>
+                    <Typography variant="caption" color="text.secondary">{m.line} · {t(m.setup === 'premium' ? 'Premium sensors' : 'Essential sensors')}</Typography>
                   </CardActionArea>
                 </Card>
               </Grid>
             ))}
           </Grid>
-          <Typography variant="overline" component="h2">2 · OPERATOR</Typography>
+          <Typography variant="overline" component="h2">2 · {t('Operator')}</Typography>
           <Stack component="form" onSubmit={verify} direction={{ xs: 'column', sm: 'row' }} gap={1.5} mt={1}>
             <TextField
-              label="Employee number"
+              label={t('Employee number')}
               value={code}
               onChange={(e) => (setCode(e.target.value), setError(''))}
               autoComplete="off"
@@ -113,9 +137,14 @@ function Gate({ session, onDone }) {
               sx={{ flex: 1 }}
             />
             <Button type="submit" variant="contained" size="large" disabled={!machineId || !code.trim() || busy} sx={{ minHeight: 56, px: 4 }}>
-              {busy ? <CircularProgress size={22} color="inherit" /> : 'Start'}
+              {busy ? <CircularProgress size={22} color="inherit" /> : t('Start')}
             </Button>
           </Stack>
+          {demo && (
+            <Alert severity="info" sx={{ mt: 2 }} action={<Button color="inherit" size="small" onClick={() => (setMachineId(demoPress.id), setCode(demo.code), setError(''))} sx={{ whiteSpace: 'nowrap' }}>{t('Use')} {demo.code}</Button>}>
+              {t('Trying it out? Sign in as the demo operator')} <b>{demo.code}</b> ({demo.name}) · {demoPress.code}
+            </Alert>
+          )}
           {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
         </CardContent>
       </Card>
@@ -124,12 +153,19 @@ function Gate({ session, onDone }) {
 }
 
 // Mood from the press's state: a fresh stop shocks it, sensor alarms alarm it, otherwise OEE vs target.
-function emotionOf(row, now) {
+// Mood from the whole situation: a fresh stop shocks it, sensor alarms alarm it; otherwise what still waits for the
+// operator (stops without a reason, questions) and where the shift is heading against its target. Happy only when
+// nothing waits, the target is in reach and OEE is on target.
+export function emotionOf(row, now, waiting = 0) {
   if (!row) return 'sleepy';
   if (['break', 'inactive', 'disconnected'].includes(row.status)) return 'sleepy';
   if (row.status === 'stopped') return now - row.since < 20000 ? 'shocked' : 'worried';
   if (Object.values(row.sensorStatus ?? {}).includes('alarm')) return 'alarmed';
-  return { good: 'happy', near: 'worried', below: 'sad' }[level(row.oee, row.targets?.oee)] ?? 'calm';
+  const f = row.forecast;
+  const oee = level(row.oee, row.targets?.oee);
+  if (waiting >= 5 || (f && (!f.reachable || f.projected < f.target * 0.85))) return 'sad';
+  if (waiting > 0 || (f && f.projected < f.target) || oee === 'below') return 'worried';
+  return oee === 'good' ? 'happy' : 'calm';
 }
 
 function useNow(ms = 1000) {
@@ -178,13 +214,15 @@ function Main({ session, onChange, onExit }) {
   const [tab, setTab] = useState('events');
   const [filter, setFilter] = useState('all');
   const [lit, setLit] = useState(null);
-  const [openId, setOpenId] = useState(null);
-  const [allEvents, setAllEvents] = useState(false);
+  const [openEv, setOpenEv] = useState(null); // the event shown in detail (this shift, or one from the history)
+  const [history, setHistory] = useState(null); // null, or the mode the history popup opens in: 'shift' | 'earlier'
+  const [refresh, setRefresh] = useState(0);
   const [allSaid, setAllSaid] = useState(false);
   const [handovers, setHandovers] = useState(false);
   const [talk, setTalk] = useState(null); // { question } while the voice dialog is open
-  const [asking, setAsking] = useState(false);
+  const [asked, setAsked] = useState(null); // Ask Dr. Macx popup: { loading } → { msg } or { error }
   const [toast, setToast] = useState('');
+  const t = useT();
 
   // Speak each new message once (not the ones already there when the screen opened).
   const heard = useRef(null);
@@ -217,22 +255,35 @@ function Main({ session, onChange, onExit }) {
     }
   }, [row?.readings]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The Events tab is this shift only: what the press said, stops and questions since the shift began. Stops still
+  // waiting from earlier shifts sit behind a button (history popup), so they are not asked of this shift's operator.
+  const shiftStart = live?.shift.start ?? 0;
+  const pendingNow = useMemo(() => (pending.data ?? []).filter((e) => e.start >= shiftStart), [pending.data, shiftStart]);
+  const pendingBefore = useMemo(() => (pending.data ?? []).filter((e) => e.start < shiftStart), [pending.data, shiftStart]);
   const events = useMemo(
-    () => buildEvents(messages.data, pending.data, shiftStops.data?.events?.filter((e) => e.confirmed), sensors),
-    [messages.data, pending.data, shiftStops.data, catalog], // eslint-disable-line react-hooks/exhaustive-deps
+    () => buildEvents(messages.data?.filter((m) => m.at >= shiftStart), pendingNow, shiftStops.data?.events?.filter((e) => e.confirmed), sensors, catalog?.alarmSensors),
+    [messages.data, pendingNow, shiftStops.data, catalog, shiftStart], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   if (!live) return <LinearProgress />;
-  if (!row) return <Alert severity="warning" sx={{ m: 2 }}>This press is no longer monitored. <Button onClick={onExit}>Pick another</Button></Alert>;
+  if (!row) return <Alert severity="warning" sx={{ m: 2 }}>{t('This press is no longer monitored.')} <Button onClick={onExit}>{t('Pick another')}</Button></Alert>;
 
-  const emotion = emotionOf(row, now);
-  const mood = EMOTIONS[emotion];
-  const question = messages.data?.find((m) => m.needsAnswer && !m.answered);
-  const opened = openId && events.find((e) => e.id === openId);
+  const question = messages.data?.find((m) => m.needsAnswer && !m.answered && m.at >= live.shift.start);
+  const opened = openEv && (events.find((e) => e.id === openEv.id) ?? openEv);
   const waiting = events.filter((e) => e.stop || e.needsAnswer).length; // stops and questions waiting for the operator
-  const showAnatomy = (target) => (setLit(target), setTab('anatomy'), setOpenId(null), setAllEvents(false));
-  const reload = () => (messages.reload(), pending.reload(), shiftStops.reload?.());
-  const handlers = { onOpen: (e) => setOpenId(e.id), onAnatomy: showAnatomy, onAnswer: (q) => setTalk({ question: q }) };
+  const emotion = emotionOf(row, now, waiting);
+  const mood = EMOTIONS[emotion];
+  const demo = !!session.demo;
+  const showAnatomy = (target) => (setLit(target), setTab('anatomy'), setOpenEv(null), setHistory(null));
+  const reload = () => (messages.reload(), pending.reload(), shiftStops.reload?.(), setRefresh((x) => x + 1));
+  const handlers = { onOpen: setOpenEv, onAnatomy: showAnatomy, onAnswer: (q, preset) => setTalk({ question: q, preset }) };
+  // tap answers for "explain": this shift's most frequent stop reasons, else the first unplanned reasons
+  const quick = (() => {
+    const count = new Map();
+    for (const e of [...pendingNow, ...(shiftStops.data?.events ?? [])]) if (e.reason) count.set(e.reason, (count.get(e.reason) ?? 0) + 1);
+    const top = [...count].sort((a, b) => b[1] - a[1]).map(([r]) => r).filter((r) => !/not given|unmapped/i.test(r));
+    return (top.length ? top : reasons.rows.filter((r) => r.type !== 'planned').map((r) => r.name)).slice(0, 5);
+  })();
 
   const switchPress = async (id) => {
     if (id === machineId) return;
@@ -243,15 +294,17 @@ function Main({ session, onChange, onExit }) {
       setToast(e.message);
     }
   };
+  // Ask Dr. Macx: a popup where the press thinks while Gemini reads its sensors, then says the answer (subtitled).
   const ask = async () => {
-    setAsking(true);
+    setAsked({ loading: true });
     try {
-      await api(`/machines/${machineId}/soul/ask`, { method: 'POST', body: { lang } });
+      const msg = await api(`/machines/${machineId}/soul/ask`, { method: 'POST', body: { lang } });
+      heard.current?.add(msg.id); // spoken here, so the history watcher does not say it again
+      voice.say(msg.text);
+      setAsked((a) => a && { msg });
       messages.reload();
     } catch (e) {
-      setToast(e.message);
-    } finally {
-      setAsking(false);
+      setAsked((a) => a && { error: e.message });
     }
   };
 
@@ -263,7 +316,7 @@ function Main({ session, onChange, onExit }) {
         display: 'grid', gridTemplateRows: 'auto minmax(0,1fr)',
       }}
     >
-      <TopBar row={row} live={live} now={now} presses={presses} operator={operator} onSwitch={switchPress} onHandovers={() => setHandovers(true)} onExit={onExit} />
+      <TopBar row={row} live={live} now={now} presses={presses} operator={operator} onSwitch={switchPress} onHandovers={() => setHandovers(true)} onExit={onExit} demo={demo} onDemo={() => onChange({ ...session, demo: !demo })} />
 
       <Box
         sx={{
@@ -273,24 +326,24 @@ function Main({ session, onChange, onExit }) {
           gridTemplateAreas: fit ? '"oee tabs" "soul tabs" "progress actions"' : '"oee" "soul" "progress" "actions" "tabs"',
         }}
       >
-        <OeePanel row={row} ring={short ? 124 : 148} />
+        <OeePanel row={row} ring={short ? 124 : 148} demo={demo} />
 
         {/* Machine Soul: the face in its own area, what I said beside it */}
         <Card sx={{ ...panel, gridArea: 'soul', display: 'flex', flexDirection: 'column', gap: 1.25 }}>
           <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
-            <Typography fontWeight={700} fontSize={16} component="h2">Machine Soul</Typography>
-            <Chip size="small" label={`${mood.label} mood`} sx={{ height: 22, fontSize: 12, bgcolor: `${mood.color}22`, color: C.ink, border: `1px solid ${mood.color}` }} />
-            <Typography variant="body2" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' } }}>Your AI assistant for this press · I speak when something changes</Typography>
+            <Typography fontWeight={700} fontSize={16} component="h2">{t('Machine Soul')}</Typography>
+            <Chip size="small" label={t(`${mood.label} mood`)} sx={{ height: 22, fontSize: 12, bgcolor: `${mood.color}22`, color: C.ink, border: `1px solid ${mood.color}` }} />
+            <Typography variant="body2" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' } }}>{t('Your AI assistant for this press · I speak when something changes')}</Typography>
             <Box flex={1} />
             <TextField
               select size="small" value={lang} onChange={(e) => onChange({ ...session, lang: e.target.value })}
-              slotProps={{ input: { startAdornment: <InputAdornment position="start"><GlobeIcon sx={{ fontSize: 18 }} /></InputAdornment> }, htmlInput: { 'aria-label': 'Kiosk language' } }}
+              slotProps={{ input: { startAdornment: <InputAdornment position="start"><GlobeIcon sx={{ fontSize: 18 }} /></InputAdornment> }, htmlInput: { 'aria-label': t('Kiosk language') } }}
               sx={{ minWidth: 150, '& .MuiInputBase-root': tight, '& .MuiSelect-select': { py: 0 } }}
             >
               {Object.entries(languages).map(([k, v]) => <MenuItem key={k} value={k}>{v}</MenuItem>)}
             </TextField>
-            <Tooltip title={voiceOn ? 'Mute my voice' : 'Turn my voice on'}>
-              <IconButton aria-label={voiceOn ? 'Mute voice' : 'Turn voice on'} onClick={() => onChange({ ...session, voice: !voiceOn })} sx={{ border: `1px solid ${C.line}`, borderRadius: R.inner, width: 36, height: 36 }}>
+            <Tooltip title={t(voiceOn ? 'Mute my voice' : 'Turn my voice on')}>
+              <IconButton aria-label={t(voiceOn ? 'Mute my voice' : 'Turn my voice on')} onClick={() => onChange({ ...session, voice: !voiceOn })} sx={{ border: `1px solid ${C.line}`, borderRadius: R.inner, width: 36, height: 36 }}>
                 {voiceOn ? <VolumeUpIcon fontSize="small" /> : <VolumeOffIcon fontSize="small" />}
               </IconButton>
             </Tooltip>
@@ -300,7 +353,7 @@ function Main({ session, onChange, onExit }) {
               <Box sx={{ position: 'absolute', inset: 0 }}>
                 <PressCharacter emotion={emotion} talking={voice.talking} running={row.status === 'running'} reduced={reduced} />
               </Box>
-              {voice.talking && <Chip size="small" color="primary" icon={<WaveIcon />} label="Speaking…" sx={{ position: 'absolute', left: 10, bottom: 10 }} />}
+              {voice.talking && <Chip size="small" color="primary" icon={<WaveIcon />} label={t('Speaking…')} sx={{ position: 'absolute', left: 10, bottom: 10 }} />}
             </Box>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, minHeight: 0 }}>
               <Bubble messages={messages.data} question={question} talking={voice.talking} onReplay={(m) => voice.say(m.text)} onAnswer={() => setTalk({ question })} />
@@ -316,18 +369,26 @@ function Main({ session, onChange, onExit }) {
             value={tab} onChange={(e, v) => setTab(v)} variant="fullWidth"
             sx={{ minHeight: 36, borderBottom: 1, borderColor: 'divider', '& .MuiTab-root': { minHeight: 36, py: 0, fontSize: 13.5, px: 1 } }}
           >
-            <Tab value="events" label={<Stack direction="row" gap={0.75} alignItems="center">Events{waiting > 0 && <Chip size="small" color="error" label={waiting} sx={{ height: 18, fontSize: 11, '& .MuiChip-label': { px: 0.75 } }} />}</Stack>} />
-            <Tab value="sensors" label="Sensors" />
-            <Tab value="anatomy" label="Anatomy" />
+            <Tab value="events" label={<Stack direction="row" gap={0.75} alignItems="center">{t('Events')}{waiting > 0 && <Chip size="small" color="error" label={waiting} sx={{ height: 18, fontSize: 11, '& .MuiChip-label': { px: 0.75 } }} />}</Stack>} />
+            <Tab value="sensors" label={t('Sensors')} />
+            <Tab value="anatomy" label={t('Anatomy')} />
           </Tabs>
           {tab === 'events' && (
             <Stack direction="row" alignItems="center" gap={1}>
               <EventFilter value={filter} onChange={setFilter} />
               <Box flex={1} />
-              <Button size="small" endIcon={<ArrowIcon />} onClick={() => setAllEvents(true)} sx={{ minHeight: 32 }}>Show all</Button>
+              <Button size="small" endIcon={<ArrowIcon />} onClick={() => setHistory('shift')} sx={{ minHeight: 32, whiteSpace: 'nowrap' }}>{t('Show all')}</Button>
             </Stack>
           )}
+          {tab === 'events' && pendingBefore.length > 0 && (
+            <Button size="small" variant="outlined" color="inherit" onClick={() => setHistory('earlier')} sx={{ minHeight: 30, justifyContent: 'space-between', borderColor: C.line, borderRadius: R.inner, fontSize: 12.5 }} endIcon={<ArrowIcon />}>
+              {pendingBefore.length} {t('stops from earlier shifts wait for a reason')}
+            </Button>
+          )}
           <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pr: 0.25 }}>
+            {tab === 'events' && (filter === 'all' || filter === 'downtime') && (
+              <BulkConfirm stops={pendingNow} reasons={reasons.rows} machineId={machineId} operatorId={operator.id} onDone={reload} />
+            )}
             {tab === 'events' && (messages.data ? <EventList events={events} filter={filter} dense {...handlers} /> : <LinearProgress />)}
             {tab === 'sensors' && <SensorsTab row={row} sensors={sensors} log={log.current} operator={operator} onPick={showAnatomy} />}
             {tab === 'anatomy' && <AnatomyTab row={row} sensors={sensors} lit={lit} onClear={() => setLit(null)} events={events} onOpen={handlers.onOpen} />}
@@ -335,14 +396,14 @@ function Main({ session, onChange, onExit }) {
         </Card>
 
         <Box sx={{ gridArea: 'actions', display: 'grid', gap: 1, gridTemplateColumns: fit ? '1fr' : '1fr 1fr', alignContent: 'end' }}>
-          <Button variant="contained" onClick={ask} disabled={asking} startIcon={asking ? <CircularProgress size={18} color="inherit" /> : <ChatIcon />} sx={{ minHeight: 46, fontSize: 15, fontWeight: 700, borderRadius: R.inner }}>
-            {asking ? 'Reading my sensors…' : 'Ask Dr. Macx'}
+          <Button variant="contained" onClick={ask} disabled={asked?.loading} startIcon={<ChatIcon />} sx={{ minHeight: 46, fontSize: 15, fontWeight: 700, borderRadius: R.inner }}>
+            {t('Get status Dr. Macx')}
           </Button>
           <Button
-            variant="outlined" color={question ? 'warning' : 'primary'} onClick={() => setTalk({ question })} startIcon={<WaveIcon />}
-            sx={{ minHeight: 46, fontSize: 15, fontWeight: 700, borderRadius: R.inner, bgcolor: '#FFFFFF', borderWidth: question ? 2 : 1, '&:hover': { borderWidth: question ? 2 : 1 } }}
+            variant="outlined" color="primary" onClick={() => setTalk({ question })} startIcon={<WaveIcon />}
+            sx={{ minHeight: 46, fontSize: 15, fontWeight: 700, borderRadius: R.inner, bgcolor: '#FFFFFF', ...(question && { borderWidth: 2, borderColor: SEV.ask.color, color: SEV.ask.text, '&:hover': { borderWidth: 2, borderColor: SEV.ask.text } }) }}
           >
-            {question ? 'Answer my question' : 'Explain by voice'}
+            {t(question ? 'Answer my question' : 'Explain by voice')}
           </Button>
         </Box>
       </Box>
@@ -350,19 +411,26 @@ function Main({ session, onChange, onExit }) {
       {opened && (
         <EventDetail
           e={opened} row={row} sensors={sensors} reasons={reasons.rows} operator={operator} lang={lang}
-          onClose={() => setOpenId(null)} onSaved={reload} onReplay={(m) => voice.say(m.text)} onAnswer={(q) => setTalk({ question: q })}
+          onClose={() => setOpenEv(null)} onSaved={reload} onReplay={(m) => voice.say(m.text)} onAnswer={handlers.onAnswer}
         />
       )}
-      <FullScreen open={allEvents} onClose={() => setAllEvents(false)} title="All events this shift" actions={<EventFilter value={filter} onChange={setFilter} />}>
-        <Box sx={{ maxWidth: 960 }}><EventList events={events} filter={filter} {...handlers} /></Box>
-      </FullScreen>
-      <FullScreen open={allSaid} onClose={() => setAllSaid(false)} title="What I said">
-        <SaidList messages={messages.data} onReplay={(m) => voice.say(m.text)} onAnatomy={(t) => (setAllSaid(false), showAnatomy(t))} />
-      </FullScreen>
-      <FullScreen open={handovers} onClose={() => setHandovers(false)} title="Shift handovers">
-        {handovers && <Box sx={{ maxWidth: 960 }}><Handovers machineId={machineId} /></Box>}
-      </FullScreen>
-      {talk && <VoiceDialog machineId={machineId} operator={operator} lang={lang} question={talk.question} onClose={() => setTalk(null)} onDone={reload} />}
+      <HistoryPopup
+        open={!!history} startMode={history ?? 'shift'} onClose={() => setHistory(null)} machineId={machineId} lang={lang} live={live} sensors={sensors}
+        alarmSensors={catalog?.alarmSensors} earlier={pendingBefore} reasons={reasons.rows} operator={operator} refresh={refresh} onConfirmed={reload} handlers={handlers}
+      />
+      <Popup open={allSaid} onClose={() => setAllSaid(false)} title={t('What I said')}>
+        <SaidList messages={messages.data} onReplay={(m) => voice.say(m.text)} onAnatomy={(target) => (setAllSaid(false), showAnatomy(target))} />
+      </Popup>
+      <Popup open={handovers} size="half" onClose={() => setHandovers(false)} title={t('Shift handovers')}>
+        {handovers && <Handovers machineId={machineId} />}
+      </Popup>
+      {asked && (
+        <AskPopup
+          asked={asked} emotion={emotion} voice={voice} voiceOn={voiceOn} reduced={reduced} running={row.status === 'running'}
+          onAgain={ask} onClose={() => (voice.stop?.(), setAsked(null))}
+        />
+      )}
+      {talk && <VoiceDialog machineId={machineId} operator={operator} lang={lang} question={talk.question} preset={talk.preset} quick={quick} onClose={() => setTalk(null)} onDone={reload} />}
       <Snackbar open={!!toast} autoHideDuration={6000} onClose={() => setToast('')}>
         <Alert severity="error" onClose={() => setToast('')} variant="filled">{toast}</Alert>
       </Snackbar>
@@ -381,8 +449,11 @@ function Spec({ label, value }) {
 
 const FRAME = { 'straight-side': 'Straight-side', 'c-frame': 'C-frame' };
 
-function TopBar({ row, live, now, presses, operator, onSwitch, onHandovers, onExit }) {
-  const setup = row.setup === 'premium' ? 'Premium' : 'Essential';
+function TopBar({ row, live, now, presses, operator, onSwitch, onHandovers, onExit, demo, onDemo }) {
+  const t = useT();
+  const lang = useLang();
+  const locale = lang === 'en' ? undefined : BCP[lang];
+  const setup = t(row.setup === 'premium' ? 'Premium' : 'Essential');
   const iconBtn = { border: `1px solid ${C.line}`, borderRadius: R.inner, width: 36, height: 36 };
   return (
     <Card sx={{ ...panel, px: 1.5, py: 0.75, display: 'flex', alignItems: 'center', columnGap: 2.5, rowGap: 1, flexWrap: 'wrap' }}>
@@ -394,7 +465,7 @@ function TopBar({ row, live, now, presses, operator, onSwitch, onHandovers, onEx
           <Stack direction="row" gap={1} alignItems="center">
             <TextField
               select variant="standard" value={row.id} onChange={(e) => onSwitch(e.target.value)}
-              slotProps={{ input: { disableUnderline: true }, htmlInput: { 'aria-label': 'Change press' }, select: { renderValue: () => row.code } }}
+              slotProps={{ input: { disableUnderline: true }, htmlInput: { 'aria-label': t('Change press') }, select: { renderValue: () => row.code } }}
               sx={{ '& .MuiSelect-select': { fontSize: 19, fontWeight: 800, py: 0, pr: '24px !important', lineHeight: 1.2 } }}
             >
               {presses.map((m) => <MenuItem key={m.id} value={m.id}>{m.code} · {m.name}</MenuItem>)}
@@ -405,18 +476,29 @@ function TopBar({ row, live, now, presses, operator, onSwitch, onHandovers, onEx
         </Box>
       </Stack>
       <Box sx={{ width: '1px', alignSelf: 'stretch', bgcolor: C.line, display: { xs: 'none', md: 'block' } }} />
-      <Spec label="Press type" value={FRAME[row.frameType] ?? row.frameType} />
-      <Spec label="Rated tonnage" value={`${row.ratedTonnage} t`} />
-      <Spec label="Sensor setup" value={row.setup === 'premium' ? `${setup} · ${row.nodes} nodes` : setup} />
+      <Spec label={t('Press type')} value={t(FRAME[row.frameType] ?? row.frameType)} />
+      <Spec label={t('Rated tonnage')} value={`${row.ratedTonnage} t`} />
+      <Spec label={t('Sensor setup')} value={row.setup === 'premium' ? `${setup} · ${row.nodes} ${t('nodes')}` : setup} />
       <Box flex={1} />
       <Stack direction="row" gap={1} alignItems="center">
         <CalendarIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
-        <Spec label={new Date(now).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })} value={new Date(now).toLocaleTimeString([], { hourCycle: 'h23' })} />
+        <Spec label={new Date(now).toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })} value={new Date(now).toLocaleTimeString(locale, { hourCycle: 'h23' })} />
       </Stack>
-      <Chip label={`${live.shift.name} · ${hhmm(live.shift.start)}–${hhmm(live.shift.end)}`} sx={{ bgcolor: C.light, color: C.blueDark, fontWeight: 700, height: 32, borderRadius: R.inner }} />
+      <Chip label={`${t(live.shift.name)} · ${hhmm(live.shift.start)}–${hhmm(live.shift.end)}`} sx={{ bgcolor: C.light, color: C.blueDark, fontWeight: 700, height: 32, borderRadius: R.inner }} />
+      {/* demo mode shows the simulation controls (breakdown, lower / better per OEE factor); off on a real shop floor */}
+      {row.sim && (
+        <Tooltip title={t(demo ? 'Demo mode: simulation controls are shown. Turn off for real use.' : 'Real mode. Turn on demo mode to show the simulation controls.')}>
+          <Button
+            size="small" variant={demo ? 'contained' : 'outlined'} color={demo ? 'warning' : 'inherit'} onClick={onDemo} aria-pressed={demo}
+            startIcon={<DemoIcon />} sx={{ minHeight: 32, borderRadius: R.inner, borderColor: C.line, whiteSpace: 'nowrap' }}
+          >
+            {t(demo ? 'Demo mode on' : 'Demo mode off')}
+          </Button>
+        </Tooltip>
+      )}
       <Stack direction="row" gap={0.75}>
-        <Tooltip title="Shift handovers"><IconButton aria-label="Shift handovers" onClick={onHandovers} sx={iconBtn}><HandoverIcon fontSize="small" /></IconButton></Tooltip>
-        <Tooltip title="Sign out"><IconButton aria-label="Sign out" onClick={onExit} sx={iconBtn}><LogoutIcon fontSize="small" /></IconButton></Tooltip>
+        <Tooltip title={t('Shift handovers')}><IconButton aria-label={t('Shift handovers')} onClick={onHandovers} sx={iconBtn}><HandoverIcon fontSize="small" /></IconButton></Tooltip>
+        <Tooltip title={t('Sign out')}><IconButton aria-label={t('Sign out')} onClick={onExit} sx={iconBtn}><LogoutIcon fontSize="small" /></IconButton></Tooltip>
       </Stack>
     </Card>
   );
@@ -447,13 +529,30 @@ function Ring({ value, color, size = 148 }) {
 
 const hours = (sec) => (sec / 3600).toFixed(1);
 
-function OeePanel({ row, ring }) {
+// The last 15 minutes next to the shift figure: moves within a minute when the press (or the simulation) changes.
+function Recent15({ now, shift, target, inline }) {
+  const t = useT();
+  if (now == null) return null;
+  const l = LV[level(now, target)];
+  const Arrow = shift != null && now > shift + 0.005 ? UpIcon : shift != null && now < shift - 0.005 ? DownIcon : null;
+  return (
+    <Tooltip title={t('Last 15 minutes (the big number is the whole shift so far)')}>
+      <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.25, ml: inline ? 0.5 : 'auto', fontSize: 12.5, fontWeight: 700, color: l?.color ?? 'text.secondary' }}>
+        {!inline && <Box component="span" sx={{ color: 'text.secondary', fontWeight: 500, mr: 0.25 }}>{t('15 min')}</Box>}
+        {Math.round(now * 100)}%{Arrow && <Arrow sx={{ fontSize: 16 }} />}
+      </Box>
+    </Tooltip>
+  );
+}
+
+function OeePanel({ row, ring, demo }) {
+  const t = useT();
   const sim = useSim(row); // simulation controls show only for dummy-generator presses (row.sim)
   const lv = (k) => LV[level(row[k], row.targets?.[k])];
   const good = row.total - row.ng;
   const factors = [
     { key: 'availability', label: 'Availability', sub: 'Run time', value: `${hours(row.runSec ?? 0)} / ${hours(row.plannedSec ?? 0)} h` },
-    { key: 'performance', label: 'Performance', sub: 'CT', value: `${row.total ? ((row.runSec ?? 0) / row.total).toFixed(1) : '—'} / ${row.idealCycleTime} s` },
+    { key: 'performance', label: 'Performance', sub: 'Cycle time', value: `${row.total ? ((row.runSec ?? 0) / row.total).toFixed(1) : '—'} / ${row.idealCycleTime} s` },
     { key: 'quality', label: 'Quality', sub: 'Good parts', value: `${num(good)} / ${num(row.total)}` },
   ];
   const o = lv('oee');
@@ -462,9 +561,14 @@ function OeePanel({ row, ring }) {
       <Ring value={row.oee} color={o?.ring ?? C.blue} size={ring} />
       <Box sx={{ flex: 1, minWidth: 0, flexBasis: { xs: '100%', sm: 0 } }}>
         <Stack direction="row" alignItems="center" gap={1} mb={1.25} flexWrap="wrap">
-          <Typography fontWeight={700} fontSize={16} component="h2" flex={1}>Overall Equipment Effectiveness</Typography>
-          {row.sim && <BreakdownButton sim={sim} />}
-          {o && <Chip size="small" label={`${o.label} · target ${row.targets?.oee?.target}%`} sx={{ height: 24, bgcolor: o.bg, color: o.color, fontWeight: 700 }} />}
+          <Typography fontWeight={700} fontSize={16} component="h2" flex={1}><Dual en="Overall Equipment Effectiveness" /></Typography>
+          {row.last15 && (
+            <Typography variant="body2" color="text.secondary">
+              {t('Last 15 min')} <Recent15 now={row.last15.oee} shift={row.oee} target={row.targets?.oee} inline />
+            </Typography>
+          )}
+          {demo && row.sim && <BreakdownButton sim={sim} />}
+          {o && <Chip size="small" label={`${t(o.label)} · ${t('target')} ${row.targets?.oee?.target}%`} sx={{ height: 24, bgcolor: o.bg, color: o.color, fontWeight: 700 }} />}
         </Stack>
         {sim.error && <Typography variant="caption" color="error" component="div" mb={0.5}>{sim.error}</Typography>}
         <Box sx={{ display: 'grid', gap: 1, gridTemplateColumns: 'repeat(3, minmax(0,1fr))' }}>
@@ -472,19 +576,19 @@ function OeePanel({ row, ring }) {
             const l = lv(f.key);
             return (
               <Box key={f.key} sx={{ px: 1.25, py: 1, borderRadius: R.inner, border: `1px solid ${C.line}`, minWidth: 0 }}>
-                <Stack direction="row" alignItems="baseline" gap={1}>
-                  <Typography variant="body2" color="text.secondary" noWrap flex={1}>{f.label}</Typography>
-                  <Typography variant="caption" noWrap sx={{ color: l?.color ?? 'text.secondary', fontWeight: 700 }}>{l?.label ?? 'No data'}</Typography>
-                </Stack>
+                <Typography variant="body2" color="text.secondary" noWrap><Dual en={f.label} /></Typography>
                 <Stack direction="row" gap={1} alignItems="center" my={0.25}>
                   <Box sx={{ width: 4, height: 24, borderRadius: 2, bgcolor: l?.ring ?? '#94A3B8', flex: 'none' }} />
                   <Typography sx={{ fontSize: 24, fontWeight: 800, lineHeight: 1.1 }}>
                     {row[f.key] == null ? '—' : Math.round(row[f.key] * 100)}<Typography component="span" sx={{ fontSize: 14, fontWeight: 800 }}>%</Typography>
                   </Typography>
+                  <Recent15 now={row.last15?.[f.key]} shift={row[f.key]} target={row.targets?.[f.key]} />
                 </Stack>
                 <Stack direction="row" alignItems="center" gap={1}>
-                  <Typography variant="caption" color="text.secondary" noWrap component="div" flex={1} minWidth={0}>{f.sub} <b style={{ color: C.ink }}>{f.value}</b></Typography>
-                  {row.sim && <FactorSim m={row} factor={f.key} sim={sim} />}
+                  <Typography variant="caption" color="text.secondary" noWrap component="div" flex={1} minWidth={0}>
+                    <b style={{ color: l?.color }}>{t(l?.label ?? 'No data')}</b> · {t(f.sub)} <b style={{ color: C.ink }}>{f.value}</b>
+                  </Typography>
+                  {demo && row.sim && <FactorSim m={row} factor={f.key} sim={sim} />}
                 </Stack>
               </Box>
             );
@@ -497,20 +601,21 @@ function OeePanel({ row, ring }) {
 
 // The latest thing the press said, as a speech bubble (or its open question: tap to answer).
 function Bubble({ messages, question, talking, onReplay, onAnswer }) {
+  const t = useT();
   const last = question ?? messages?.find((m) => m.kind !== 'operator');
   return (
     <Box
-      sx={{ position: 'relative', flex: 'none', bgcolor: question ? LEVELS.near.bg : C.light, border: `1px solid ${question ? '#FFE082' : '#BBDEFB'}`, borderRadius: R.inner, p: 1.25, pr: 6, cursor: question ? 'pointer' : 'default' }}
+      sx={{ position: 'relative', flex: 'none', bgcolor: question ? SEV.ask.bg : C.light, border: `1px solid ${question ? SEV.ask.line : '#BBDEFB'}`, borderRadius: R.inner, p: 1.25, pr: 6, cursor: question ? 'pointer' : 'default' }}
       aria-live="polite" onClick={question ? onAnswer : undefined}
     >
-      {question && <Typography variant="caption" fontWeight={700} sx={{ color: LEVELS.near.color }} component="div">Question for you · tap to answer</Typography>}
+      {question && <Typography variant="caption" fontWeight={700} sx={{ color: SEV.ask.text }} component="div">{t('Question for you · tap to answer')}</Typography>}
       <Typography sx={{ fontSize: 15, fontWeight: 600, lineHeight: 1.45, color: C.ink, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-        {last?.text ?? 'Hello! I will tell you when something changes. Ask me anything with the buttons on the right.'}
+        {last?.text ?? t('Hello! I will tell you when something changes. Ask me anything with the buttons on the right.')}
       </Typography>
       {last && (
-        <Tooltip title={talking ? 'Speaking…' : 'Say it again'}>
+        <Tooltip title={t(talking ? 'Speaking…' : 'Say it again')}>
           <IconButton
-            aria-label="Say it again" onClick={(ev) => (ev.stopPropagation(), onReplay(last))}
+            aria-label={t('Say it again')} onClick={(ev) => (ev.stopPropagation(), onReplay(last))}
             sx={{ position: 'absolute', right: 8, top: 8, width: 32, height: 32, bgcolor: '#FFFFFF', color: C.blue, border: `1px solid ${C.line}`, '&:hover': { bgcolor: '#F8FAFC' }, animation: talking ? 'soulPulse 1s ease-in-out infinite' : 'none', '@keyframes soulPulse': { '50%': { transform: 'scale(1.12)' } } }}
           >
             <WaveIcon fontSize="small" />
@@ -521,20 +626,21 @@ function Bubble({ messages, question, talking, onReplay, onAnswer }) {
   );
 }
 
-const DOT = { stop: SEV.error.color, anomaly: SEV.warn.color, risk: SEV.warn.color, question: SEV.warn.color, report: SEV.ok.color, cycle: SEV.info.color, handover: SEV.info.color, advice: SEV.info.color, operator: '#94A3B8' };
+const DOT = { stop: SEV.error.color, anomaly: SEV.warn.color, risk: SEV.warn.color, question: SEV.ask.color, report: SEV.ok.color, cycle: SEV.info.color, handover: SEV.info.color, advice: SEV.info.color, operator: '#94A3B8' };
 const KIND = { advice: 'Advice', report: 'Report', operator: 'You said', stop: 'Stop', risk: 'Target risk', question: 'Question', anomaly: 'Sensor alert', cycle: 'Cycle time', handover: 'Handover', info: 'Info' };
 
 function Recent({ messages, events, onOpen, onAll }) {
+  const t = useT();
   const byMessage = new Map(events.filter((e) => e.message).map((e) => [e.message.id, e]));
   return (
     <Box sx={{ flex: 1, minHeight: 140, maxHeight: { xs: 300, lg: 'none' }, display: 'flex', flexDirection: 'column', border: `1px solid ${C.line}`, borderRadius: R.inner }}>
       <Stack direction="row" alignItems="center" sx={{ px: 1.25, py: 0.5, borderBottom: `1px solid ${C.line}` }}>
-        <Typography fontWeight={700} fontSize={13.5} flex={1}>Recent messages</Typography>
-        <Button size="small" endIcon={<ArrowIcon />} onClick={onAll} sx={{ minHeight: 28, py: 0 }}>View all</Button>
+        <Typography fontWeight={700} fontSize={13.5} flex={1}>{t('Recent messages')}</Typography>
+        <Button size="small" endIcon={<ArrowIcon />} onClick={onAll} sx={{ minHeight: 28, py: 0 }}>{t('View all')}</Button>
       </Stack>
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', py: 0.5 }}>
         {!messages && <LinearProgress />}
-        {messages?.length === 0 && <Typography variant="body2" color="text.secondary" sx={{ px: 1.25 }}>Nothing yet.</Typography>}
+        {messages?.length === 0 && <Typography variant="body2" color="text.secondary" sx={{ px: 1.25 }}>{t('Nothing yet.')}</Typography>}
         {messages?.map((m) => {
           const e = byMessage.get(m.id);
           return (
@@ -545,7 +651,7 @@ function Recent({ messages, events, onOpen, onAll }) {
             >
               <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: DOT[m.kind] ?? '#94A3B8', flex: 'none' }} />
               <Typography variant="body2" color="text.secondary" sx={{ width: 40, flex: 'none', fontSize: 12.5 }}>{hhmm(m.at)}</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ width: 84, flex: 'none', fontSize: 12 }} noWrap>{KIND[m.kind] ?? m.kind}</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ width: 96, flex: 'none', fontSize: 12 }} noWrap>{t(KIND[m.kind] ?? m.kind)}</Typography>
               <Typography variant="body2" noWrap flex={1} sx={{ fontSize: 13 }}>{m.text}</Typography>
             </Stack>
           );
@@ -556,22 +662,24 @@ function Recent({ messages, events, onOpen, onAll }) {
 }
 
 function SaidList({ messages, onReplay, onAnatomy }) {
+  const t = useT();
+  const lang = useLang();
   return (
-    <Stack spacing={1} sx={{ maxWidth: 960 }}>
+    <Stack spacing={1}>
       {messages?.map((m) => (
         <Box key={m.id} sx={{ p: 1.25, borderRadius: R.inner, border: `1px solid ${m.needsAnswer && !m.answered ? SEV.warn.line : C.line}`, bgcolor: m.kind === 'operator' ? C.light : '#FFFFFF' }}>
           <Stack direction="row" alignItems="center" gap={1} mb={0.25}>
-            <Typography variant="caption" fontWeight={700} color="text.secondary">{new Date(m.at).toLocaleString()}</Typography>
-            <Chip size="small" label={KIND[m.kind] ?? m.kind} sx={{ height: 20, fontSize: 11 }} />
+            <Typography variant="caption" fontWeight={700} color="text.secondary">{new Date(m.at).toLocaleString(lang === 'en' ? undefined : BCP[lang])}</Typography>
+            <Chip size="small" label={t(KIND[m.kind] ?? m.kind)} sx={{ height: 20, fontSize: 11 }} />
             <Box flex={1} />
-            {m.kind !== 'operator' && <IconButton size="small" aria-label="Say it again" onClick={() => onReplay(m)}><ReplayIcon fontSize="small" /></IconButton>}
+            {m.kind !== 'operator' && <IconButton size="small" aria-label={t('Say it again')} onClick={() => onReplay(m)}><ReplayIcon fontSize="small" /></IconButton>}
           </Stack>
           <Typography variant="body2">{m.text}</Typography>
           {(m.data?.part || m.data?.node) && (
-            <Button size="small" onClick={() => onAnatomy({ part: m.data.node ? 'loadCell' : m.data.part, node: m.data.node || null })} sx={{ mt: 0.5, minHeight: 28 }}>View in anatomy</Button>
+            <Button size="small" onClick={() => onAnatomy({ part: m.data.node ? 'loadCell' : m.data.part, node: m.data.node || null })} sx={{ mt: 0.5, minHeight: 28 }}>{t('View in anatomy')}</Button>
           )}
           {m.data?.actions?.length > 0 && (
-            <Box component="ul" sx={{ m: 0, mt: 0.5, pl: 2.5 }}>{m.data.actions.map((a, i) => <Typography key={i} component="li" variant="body2" color="text.secondary">{a}</Typography>)}</Box>
+            <Box component="ul" sx={{ m: 0, mt: 0.5, pl: 2.5 }}>{m.data.actions.map((a, i) => <Typography key={i} component="li" variant="body2" color="text.secondary">{t(a)}</Typography>)}</Box>
           )}
         </Box>
       ))}
@@ -581,56 +689,160 @@ function SaidList({ messages, onReplay, onAnatomy }) {
 
 // Schedule vs actual for this shift: good pieces of the shift plan, where the schedule is now, and the projected end.
 function Progress({ row, live, now }) {
-  const good = row.total - row.ng;
-  const plan = row.plan ?? { toNow: 0, shift: 0 };
-  const gap = good - plan.toNow;
-  const rate = row.plannedSec ? good / row.plannedSec : 0; // good pieces per planned second so far
-  const remainingSec = Math.max(0, (plan.shift - plan.toNow) * row.idealCycleTime);
-  const projected = Math.round(good + rate * remainingSec);
+  const t = useT();
+  // the shift forecast from the server: the same numbers the press says out loud and the handover writes
+  const f = row.forecast ?? { good: 0, toNow: 0, plan: 0, target: 0, projected: 0 };
+  const { good, projected } = f;
+  const plan = { toNow: f.toNow, shift: f.plan };
   const share = plan.shift ? good / plan.shift : 0;
   const k = level(plan.toNow ? good / plan.toNow : null, row.targets?.oee);
-  const diff = projected - plan.shift;
-  const signed = (v) => <Box component="span" sx={{ color: v < 0 ? LEVELS.below.color : LEVELS.good.color }}>{v >= 0 ? '+' : ''}{num(v)}</Box>;
-  const stat = (label, value) => (
+  const diff = projected - f.target;
+  const stat = (label, value, note) => (
     <Stack direction="row" alignItems="baseline" gap={1} minWidth={0}>
       <Typography variant="body2" color="text.secondary" noWrap>{label}</Typography>
       <Typography component="div" sx={{ fontSize: 15, fontWeight: 700 }} noWrap>{value}</Typography>
+      <Typography variant="caption" color="text.secondary" noWrap>{note}</Typography>
     </Stack>
   );
   return (
     <Card sx={{ ...panel, py: 1.25, gridArea: 'progress' }}>
       <Stack direction="row" alignItems="center" gap={1.5}>
-        <Typography fontWeight={700} fontSize={14} component="h2" noWrap>Production progress · {live.shift.name}</Typography>
+        <Typography fontWeight={700} fontSize={14} component="h2" noWrap>{t('Production progress')} · {t(live.shift.name)}</Typography>
         <Typography variant="caption" color="text.secondary" noWrap sx={{ flex: 1, minWidth: 0 }}>
-          {duration(Math.max(0, live.shift.end - now))} left · plan = planned time ÷ ideal cycle ({row.idealCycleTime} s)
+          {duration(Math.max(0, live.shift.end - now))} {t('left')} · {t('plan = planned time ÷ ideal cycle time')} ({row.idealCycleTime} s)
         </Typography>
         <Typography sx={{ fontSize: 18, fontWeight: 800, lineHeight: 1 }}>{Math.round(share * 100)}%</Typography>
       </Stack>
-      <Box sx={{ position: 'relative', height: 10, my: 1, borderRadius: 5, bgcolor: '#E2E8F0', overflow: 'hidden' }} role="img" aria-label={`Good ${good} of ${plan.shift} planned this shift; ${plan.toNow} due by now`}>
+      <Box sx={{ position: 'relative', height: 10, my: 1, borderRadius: 5, bgcolor: '#E2E8F0', overflow: 'hidden' }} role="img" aria-label={`${t('Actual qty by now')} ${good} · ${t('Schedule plan')} ${plan.shift}`}>
         <Box sx={{ position: 'absolute', inset: 0, width: `${Math.min(100, share * 100)}%`, bgcolor: k ? LEVELS[k].bar : C.blue, borderRadius: 5 }} />
         <Box sx={{ position: 'absolute', top: 0, bottom: 0, left: `${plan.shift ? Math.min(100, (plan.toNow / plan.shift) * 100) : 0}%`, width: 2, bgcolor: C.ink }} />
       </Box>
-      <Box sx={{ display: 'grid', columnGap: 2, rowGap: 0.5, gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, auto)' }, justifyContent: 'space-between' }}>
-        {stat('Good parts', <>{num(good)} <Box component="span" sx={{ color: 'text.secondary', fontSize: 12.5 }}>/ {num(plan.shift)}</Box></>)}
-        {stat('Planned by now', num(plan.toNow))}
-        {stat('Gap', signed(gap))}
-        {stat('Projected end of shift', <>{num(projected)} <Box component="span" sx={{ fontSize: 12.5 }}>({signed(diff)})</Box></>)}
+      <Box sx={{ display: 'grid', columnGap: 2, rowGap: 0.5, gridTemplateColumns: { xs: '1fr', md: 'repeat(3, auto)' }, justifyContent: 'space-between' }}>
+        {stat(t('Actual qty by now'), num(good), `${t('qty produced')} · ${num(plan.toNow)} ${t('due by now')}`)}
+        {stat(t('Schedule plan'), num(plan.shift), t('qty / shift'))}
+        {stat(t('Projected end of shift'), num(projected), <Box component="span" sx={{ color: diff < 0 ? LEVELS.below.color : LEVELS.good.color, fontWeight: 700 }}>{num(Math.abs(diff))} {t(diff < 0 ? 'qty below target' : 'qty above target')} ({num(f.target)})</Box>)}
       </Box>
     </Card>
   );
 }
 
+// Ask Dr. Macx: the screen dims, the press thinks while Gemini reads its sensors and history, then says the
+// answer with a subtitle under its face.
+function AskPopup({ asked, emotion, voice, voiceOn, reduced, running, onAgain, onClose }) {
+  const t = useT();
+  const msg = asked.msg;
+  // with the voice muted the mouth still moves, for about as long as the answer takes to say
+  const [mouth, setMouth] = useState(false);
+  useEffect(() => {
+    if (!msg || voiceOn) return undefined;
+    setMouth(true);
+    const id = setTimeout(() => setMouth(false), Math.min(20000, msg.text.split(/\s+/).length * 380));
+    return () => clearTimeout(id);
+  }, [msg, voiceOn]);
+  const talking = voice.talking || mouth;
+  const face = asked.loading ? 'thinking' : asked.error ? 'worried' : emotion === 'sleepy' ? 'calm' : emotion;
+  return (
+    <Popup open size="wide" onClose={onClose} title={t('Get status Dr. Macx')}>
+      <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', lg: 'minmax(0,1fr) minmax(0,1fr)' } }}>
+        <Box minWidth={0}>
+      <Box sx={{ position: 'relative', height: { xs: 240, md: 300 }, borderRadius: R.inner, background: `radial-gradient(circle at 50% 55%, ${C.light}, #FFFFFF 72%)`, border: `1px solid ${C.line}` }}>
+        <Box sx={{ position: 'absolute', inset: 0 }}>
+          <PressCharacter emotion={face} talking={talking} running={running} reduced={reduced} />
+        </Box>
+        <Chip
+          size="small" color={asked.loading ? 'default' : 'primary'} icon={asked.loading ? <CircularProgress size={12} /> : <WaveIcon />}
+          label={t(asked.loading ? 'Thinking…' : talking ? 'Speaking…' : asked.error ? 'I could not answer' : 'Done')}
+          sx={{ position: 'absolute', left: 10, top: 10, bgcolor: asked.loading ? '#FFFFFF' : undefined }}
+        />
+      </Box>
+      {/* the subtitle: what I am saying */}
+      <Box aria-live="polite" sx={{ mt: 1.5, px: 2, py: 1.5, borderRadius: R.inner, bgcolor: 'rgba(15,23,42,0.9)', color: '#FFFFFF', textAlign: 'center', minHeight: 64, display: 'grid', placeItems: 'center' }}>
+        {asked.loading && (
+          <Box width="100%">
+            <Typography sx={{ fontSize: 16, mb: 1 }}>{t('Let me read my sensors and my history…')}</Typography>
+            <LinearProgress />
+          </Box>
+        )}
+        {msg && <Typography sx={{ fontSize: 17, lineHeight: 1.5 }}>{msg.text}</Typography>}
+        {asked.error && <Typography sx={{ fontSize: 16, color: '#FCA5A5' }}>{asked.error}</Typography>}
+      </Box>
+      {msg?.data?.actions?.length > 0 && (
+        <Box mt={1.5}>
+          <Typography variant="overline" color="text.secondary">{t('What to do')}</Typography>
+          <Box component="ul" sx={{ m: 0, pl: 2.5 }}>{msg.data.actions.map((x, i) => <Typography key={i} component="li" variant="body2">{t(x)}</Typography>)}</Box>
+        </Box>
+      )}
+      <Stack direction="row" gap={1} justifyContent="flex-end" mt={2}>
+        {msg && <Button startIcon={<ReplayIcon />} onClick={() => voice.say(msg.text)}>{t('Say it again')}</Button>}
+        {!asked.loading && <Button variant="outlined" startIcon={<ChatIcon />} onClick={onAgain}>{t('Ask again')}</Button>}
+        <Button variant="contained" onClick={onClose}>{t('Close')}</Button>
+      </Stack>
+        </Box>
+        <ChatPanel />
+      </Box>
+    </Popup>
+  );
+}
+
+// Chat with Dr. Macx, beside the status. ponytail: layout only, with a sample conversation; the chat logic
+// (send the question with the press's context to Gemini, keep the thread) comes later.
+const SAMPLE_CHAT = [
+  { from: 'operator', at: '15:21', text: 'Why is my performance low this shift?' },
+  { from: 'press', at: '15:21', text: 'My cycle time is 7.6 seconds against an ideal of 6. Most of the loss is short feeder jams: three in the last hour.' },
+  { from: 'operator', at: '15:22', text: 'What should I check first?' },
+  { from: 'press', at: '15:22', text: 'The feeder guides and the strip lubrication. If jams continue after that, ask maintenance to check the stripper plate.' },
+  { from: 'operator', at: '15:24', text: 'Can we still reach the target?' },
+  { from: 'press', at: '15:24', text: 'Not fully. At my ideal cycle with no more stops I would make about 2,550 of 3,570. Short stops get us closest.' },
+];
+
+function ChatPanel() {
+  const t = useT();
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: { lg: 520 }, border: `1px solid ${C.line}`, borderRadius: R.inner, overflow: 'hidden' }}>
+      <Stack direction="row" alignItems="center" gap={1} sx={{ px: 1.5, py: 1, borderBottom: `1px solid ${C.line}`, bgcolor: '#F8FAFC' }}>
+        <ChatIcon sx={{ color: C.blue, fontSize: 20 }} />
+        <Typography fontWeight={700} flex={1}>{t('Chat with Dr. Macx')}</Typography>
+        <Chip size="small" label={t('Sample conversation')} sx={{ height: 22, bgcolor: '#FFF8E1', color: '#8A5300' }} />
+      </Stack>
+      <Stack spacing={1.25} sx={{ flex: 1, overflowY: 'auto', p: 1.5, maxHeight: { xs: 360, lg: 'none' } }} role="log">
+        {SAMPLE_CHAT.map((c, i) => {
+          const me = c.from === 'operator';
+          return (
+            <Stack key={i} direction="row" justifyContent={me ? 'flex-end' : 'flex-start'} gap={1}>
+              {!me && <Box sx={{ width: 28, height: 28, borderRadius: '50%', bgcolor: '#F7A912', flex: 'none', display: 'grid', placeItems: 'center', color: '#3B2A05', fontWeight: 800, fontSize: 12 }} aria-hidden>Dr</Box>}
+              <Box sx={{ maxWidth: '80%', px: 1.25, py: 0.75, borderRadius: '12px', ...(me ? { bgcolor: C.blue, color: '#FFFFFF', borderBottomRightRadius: '4px' } : { bgcolor: C.light, color: C.ink, borderBottomLeftRadius: '4px' }) }}>
+                <Typography variant="body2" sx={{ lineHeight: 1.45 }}>{t(c.text)}</Typography>
+                <Typography variant="caption" sx={{ opacity: 0.7, display: 'block', textAlign: 'right', mt: 0.25 }}>{c.at}</Typography>
+              </Box>
+            </Stack>
+          );
+        })}
+      </Stack>
+      <Stack direction="row" gap={1} alignItems="center" sx={{ p: 1, borderTop: `1px solid ${C.line}` }}>
+        <TextField size="small" fullWidth placeholder={t('Ask Dr. Macx anything…')} disabled />
+        <IconButton aria-label={t('Speak')} disabled sx={{ border: `1px solid ${C.line}`, borderRadius: R.inner }}><MicIcon /></IconButton>
+        <Button variant="contained" disabled sx={{ minHeight: 40, borderRadius: R.inner }}>{t('Send')}</Button>
+      </Stack>
+      <Typography variant="caption" color="text.secondary" sx={{ px: 1.5, pb: 1 }}>{t('Chat is coming soon: this is a sample of how it will look.')}</Typography>
+    </Box>
+  );
+}
+
 // "Explain by voice": the operator tells what happened (or answers the press's question); Gemini checks it.
-function VoiceDialog({ machineId, operator, lang, question, onClose, onDone }) {
+// Answers by tap, typing or voice (a loud floor, or an operator who would rather not talk to a screen).
+function VoiceDialog({ machineId, operator, lang, question, preset, quick, onClose, onDone }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const dictation = useDictation(BCP[lang] ?? 'en-US', (t) => setText((x) => `${x} ${t}`.trim()));
-  const send = async () => {
+  const dictation = useDictation(BCP[lang] ?? 'en-US', (said) => setText((x) => `${x} ${said}`.trim()));
+  const t = useT();
+  const causes = question?.data?.causes ?? [];
+  const answers = question ? question.data?.answers ?? [] : quick;
+  const send = async (body = text) => {
     setBusy(true);
     setError('');
     try {
-      await api(`/machines/${machineId}/soul/explain`, { method: 'POST', body: { lang, text, operatorId: operator.id, replyTo: question?.id } });
+      await api(`/machines/${machineId}/soul/explain`, { method: 'POST', body: { lang, text: body, operatorId: operator.id, replyTo: question?.id } });
       onDone();
       onClose();
     } catch (e) {
@@ -638,30 +850,44 @@ function VoiceDialog({ machineId, operator, lang, question, onClose, onDone }) {
       setBusy(false);
     }
   };
+  const tap = (a) => {
+    if (question && a === 'Yes' && causes.length) return send(`Yes, it was ${causes.map((c) => `${c.count} × ${c.reason} (${c.minutes} min)`).join(' and ')}.`);
+    setText((x) => (question ? `${t(a)}: ${x}` : `${x}${x ? ', ' : ''}${t(a)}`).trim());
+  };
+  useEffect(() => {
+    if (preset) tap(preset);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>{question ? 'Answer my question' : 'Explain by voice'}</DialogTitle>
+      <DialogTitle>{t(question ? 'Answer my question' : 'Explain by voice or text')}</DialogTitle>
       <DialogContent>
         {question && <Box sx={{ p: 1.5, mb: 2, borderRadius: '8px', bgcolor: SEV.warn.bg, border: `1px solid ${SEV.warn.line}` }}><Typography>{question.text}</Typography></Box>}
-        <Typography color="text.secondary" mb={2}>Press the mic and tell me what happened, in any language. I check it against my sensors and keep it in my history.</Typography>
+        {answers.length > 0 && (
+          <Stack direction="row" gap={1} flexWrap="wrap" mb={2} aria-label={t('Tap an answer')}>
+            {answers.map((a) => (
+              <Button key={a} variant="outlined" disabled={busy} onClick={() => tap(a)} sx={{ borderRadius: '8px', ...(question && { borderColor: SEV.ask.line, color: SEV.ask.text }) }}>{t(a)}</Button>
+            ))}
+          </Stack>
+        )}
+        <Typography color="text.secondary" mb={2}>{t('Tap an answer, type, or press the mic and say it in any language. I check it against my sensors and keep it in my history.')}</Typography>
         <Stack direction="row" gap={1.5} alignItems="flex-start">
           {dictation.supported && (
             <IconButton
-              aria-label={dictation.listening ? 'Stop recording' : 'Start recording'}
+              aria-label={t(dictation.listening ? 'Stop recording' : 'Start recording')}
               onClick={dictation.listening ? dictation.stop : dictation.start}
               sx={{ width: 56, height: 56, flex: 'none', bgcolor: dictation.listening ? LEVELS.below.bg : C.light, color: dictation.listening ? LEVELS.below.color : C.blue }}
             >
               {dictation.listening ? <StopIcon fontSize="large" /> : <MicIcon fontSize="large" />}
             </IconButton>
           )}
-          <TextField multiline minRows={3} maxRows={8} fullWidth placeholder="What happened?" value={text} onChange={(e) => setText(e.target.value)} slotProps={{ htmlInput: { maxLength: 2000 } }} />
+          <TextField multiline minRows={3} maxRows={8} fullWidth placeholder={t('What happened?')} value={text} onChange={(e) => setText(e.target.value)} slotProps={{ htmlInput: { maxLength: 2000 } }} />
         </Stack>
-        {dictation.listening && <Typography variant="caption" color="error.main">Listening… press stop when you are done.</Typography>}
+        {dictation.listening && <Typography variant="caption" color="error.main">{t('Listening… press stop when you are done.')}</Typography>}
         {(error || dictation.error) && <Alert severity="error" sx={{ mt: 1.5 }}>{error || dictation.error}</Alert>}
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" onClick={send} disabled={!text.trim() || busy}>{busy ? <CircularProgress size={20} color="inherit" /> : 'Send to Dr. Macx'}</Button>
+        <Button onClick={onClose}>{t('Cancel')}</Button>
+        <Button variant="contained" onClick={() => send()} disabled={!text.trim() || busy}>{busy ? <CircularProgress size={20} color="inherit" /> : t('Send to Dr. Macx')}</Button>
       </DialogActions>
     </Dialog>
   );

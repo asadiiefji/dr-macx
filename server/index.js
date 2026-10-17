@@ -6,7 +6,7 @@ import { startLive } from './live.js';
 import { currentShift, groupBuckets, oee, add, ZERO, touchesBreak, excludePlanned, buildTimeline } from './oee.js';
 import { withReasons, markRepeats, downtimeStats, REPEAT, pointsFor } from './analysis.js';
 import { analyze, suggestReason, chat, explain, aiStatus, MODEL } from './ai.js';
-import { SENSORS, SETUPS, FRAMES, CURRENT } from './sensors.js';
+import { SENSORS, SETUPS, FRAMES, CURRENT, ALARM_SENSORS } from './sensors.js';
 import { soulRoutes } from './soul.js';
 import { startBrain } from './brain.js';
 import { cycleRoutes } from './cycle.js';
@@ -23,7 +23,7 @@ const list = async (col) => (await db.collection(col).get()).docs.map((d) => ({ 
 app.get('/api/live', (req, res) => res.json(live.snapshot()));
 
 // Stamping-press sensor catalog (Essential / Premium), shared with the client.
-app.get('/api/sensors', (req, res) => res.json({ setups: SETUPS, frames: FRAMES, current: CURRENT, sensors: SENSORS }));
+app.get('/api/sensors', (req, res) => res.json({ setups: SETUPS, frames: FRAMES, current: CURRENT, sensors: SENSORS, alarmSensors: ALARM_SENSORS }));
 
 // Which Google AI models are active, how they are reached, and how their last call went (sidebar).
 app.get('/api/ai', (req, res) => res.json(aiStatus()));

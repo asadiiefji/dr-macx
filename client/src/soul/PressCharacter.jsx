@@ -17,6 +17,7 @@ export const EMOTIONS = {
   alarmed: { tilt: -0.5, browY: -0.06, lid: 0.1, eye: 1.05, mouth: -0.8, motion: 'shake', color: '#EF4444', label: 'Alarmed' },
   shocked: { tilt: 0.05, browY: 0.16, lid: 0, eye: 1.18, mouth: 0, motion: 'shake', color: '#F97316', label: 'Shocked' },
   sleepy: { tilt: 0.12, browY: -0.05, lid: 0.85, eye: 1, mouth: 0.2, motion: 'sway', color: '#94A3B8', label: 'Sleepy' },
+  thinking: { tilt: -0.3, browY: 0.1, lid: 0.18, eye: 1, mouth: 0.15, motion: 'think', color: '#60A5FA', label: 'Thinking' },
 };
 
 const Gloss = ({ color = YELLOW }) => <meshPhysicalMaterial color={color} roughness={0.32} clearcoat={1} clearcoatRoughness={0.12} />;
@@ -32,9 +33,10 @@ function Eye({ x, e }) {
     const target = -Math.PI / 2 + Math.max(e.lid, blink) * Math.PI; // lid swings from behind the eye over it
     lid.current.rotation.x += (target - lid.current.rotation.x) * 0.3;
     eye.current.scale.lerp({ x: e.eye, y: e.eye, z: e.eye }, 0.15);
-    // pupils wander a little
-    look.current.position.x = Math.sin(t * 0.5) * 0.035;
-    look.current.position.y = Math.sin(t * 0.37) * 0.02 - (e.motion === 'droop' ? 0.04 : 0);
+    // pupils wander a little; thinking looks up and to the side
+    const think = e.motion === 'think';
+    look.current.position.x += ((think ? 0.08 : Math.sin(t * 0.5) * 0.035) - look.current.position.x) * 0.2;
+    look.current.position.y += ((think ? 0.09 : Math.sin(t * 0.37) * 0.02 - (e.motion === 'droop' ? 0.04 : 0)) - look.current.position.y) * 0.2;
   });
   return (
     <group ref={eye} position={[x, 1.48, 0.72]}>
@@ -85,16 +87,17 @@ function Puffs({ kind }) {
   const refs = [useRef(), useRef(), useRef()];
   useFrame(({ clock }) => {
     refs.forEach((r, i) => {
-      const t = (clock.elapsedTime * (kind === 'sleep' ? 0.35 : 0.9) + i / 3) % 1;
-      r.current.position.set((kind === 'sleep' ? 1 : -0.7 + i * 0.7) + t * (kind === 'sleep' ? 0.5 : 0), 2.45 + t * 0.9, 0);
-      r.current.scale.setScalar((kind === 'sleep' ? 0.08 + i * 0.05 : 0.18) * (0.6 + t));
+      const bubbles = kind !== 'steam'; // sleep and think: small bubbles rising at the side
+      const t = (clock.elapsedTime * (bubbles ? 0.35 : 0.9) + i / 3) % 1;
+      r.current.position.set((bubbles ? 1 : -0.7 + i * 0.7) + t * (bubbles ? 0.5 : 0), 2.45 + t * 0.9, 0);
+      r.current.scale.setScalar((bubbles ? 0.08 + i * 0.05 : 0.18) * (0.6 + t));
       r.current.material.opacity = 1 - t;
     });
   });
   return refs.map((r, i) => (
     <mesh key={i} ref={r}>
       <sphereGeometry args={[1, 16, 12]} />
-      <meshStandardMaterial color={kind === 'sleep' ? '#CBD5E1' : '#FFFFFF'} transparent opacity={0.8} />
+      <meshStandardMaterial color={{ sleep: '#CBD5E1', think: '#93C5FD' }[kind] ?? '#FFFFFF'} transparent opacity={0.8} />
     </mesh>
   ));
 }
@@ -109,7 +112,7 @@ function Face({ emotion, talking, running }) {
     const shake = m === 'shake' ? Math.sin(t * 38) * 0.03 : 0;
     const y = m === 'hop' ? Math.abs(Math.sin(t * 3)) * 0.1 : m === 'droop' ? -0.05 + Math.sin(t * 1.1) * 0.02 : Math.sin(t * 1.6) * 0.035;
     body.current.position.set(shake, y, 0);
-    body.current.rotation.z = m === 'sway' ? Math.sin(t * 0.8) * 0.05 : m === 'droop' ? -0.03 : 0;
+    body.current.rotation.z = m === 'sway' ? Math.sin(t * 0.8) * 0.05 : m === 'droop' ? -0.03 : m === 'think' ? 0.06 + Math.sin(t * 1.2) * 0.02 : 0;
     // slow look-around; a small working nod while the press strokes
     body.current.rotation.y = Math.sin(t * 0.4) * 0.14;
     body.current.rotation.x = running && m !== 'shake' && m !== 'sway' ? Math.sin(t * 4) * 0.015 : 0;
@@ -144,6 +147,7 @@ function Face({ emotion, talking, running }) {
       <Mouth e={e} talking={talking} />
       {e.motion === 'shake' && <Puffs kind="steam" />}
       {emotion === 'sleepy' && <Puffs kind="sleep" />}
+      {emotion === 'thinking' && <Puffs kind="think" />}
     </group>
   );
 }

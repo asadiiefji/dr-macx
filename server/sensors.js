@@ -92,3 +92,23 @@ export function toOeeTags(m, r, manualNc) {
 // Default PLC tag addresses for a press: Channel.Device.<sensor tag>.
 export const defaultTags = (m, channel = 'Channel1', device = m.code?.replace(/[^\w]/g, '') || 'Press') =>
   Object.fromEntries(sensorsFor(m).map((s) => [s.id, `${channel}.${device}.${s.tag}`]));
+
+// The sensor that tells about each PLC stop alarm (Premium sensors first, then what an Essential press has):
+// a jam shows in the acoustic stick score, a misread in the I/O module, a hydraulic fault in gearbox vibration,
+// a coil shortage at the laser eye (no parts). With no alarm, the motor current is what saw the press stop.
+export const ALARM_SENSORS = { 101: ['acoustic', 'laserEye'], 102: ['ioFaults', 'laserEye'], 310: ['vibGearbox', 'motorCurrent'], 412: ['laserEye'], 0: ['motorCurrent'] };
+
+// The sensor to light for a stop: the one its PLC alarm points at; with no alarm, a sensor that was out of limits
+// just before it (before = readings, newest first), else the motor current. Returns the catalog entry for this press.
+export function stopSensor(m, alarmCode, before = []) {
+  const own = sensorsFor(m);
+  for (const id of alarmCode ? ALARM_SENSORS[alarmCode] ?? [] : []) {
+    const mapped = own.find((s) => s.id === id);
+    if (mapped) return mapped;
+  }
+  for (const r of before) {
+    const off = r && own.find((s) => s.id !== 'alarm' && ['warn', 'alarm'].includes(judge(m, s, valueOf(r, s))));
+    if (off) return off;
+  }
+  return own.find((s) => s.id === 'motorCurrent');
+}

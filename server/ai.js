@@ -259,14 +259,19 @@ export async function soulExplain(context, statement, lang) {
   return JSON.parse(res.text);
 }
 
-// Translate my English messages for a kiosk in another language (kept short, spoken aloud).
-export async function translateTexts(texts, lang) {
+// Translate English texts for a kiosk in another language: the press's own messages (speech, first person),
+// or the kiosk's user-interface labels (ui: buttons, titles, menus, short notes).
+const TRANSLATE = {
+  speech: 'Keep the first-person voice of a machine talking to its operator.',
+  ui: 'These are user-interface labels of an industrial OEE monitoring kiosk next to a stamping press (titles, buttons, menu items, chips, short notes). Translate concisely in the usual shop-floor wording; keep each label about as short as the English. Keep every {placeholder} in curly braces exactly as written.',
+};
+export async function translateTexts(texts, lang, kind = 'speech') {
   if (!texts.length) return [];
   const res = await track('gemini', () => gemini().models.generateContent({
     model: MODEL,
     contents: JSON.stringify(texts),
     config: {
-      systemInstruction: `Translate each string of the JSON array into ${LANGUAGES[lang]}. Keep numbers, units and codes. Keep the first-person voice of a machine talking to its operator. Return a JSON array of the same length.`,
+      systemInstruction: `Translate each string of the JSON array into ${LANGUAGES[lang]}. Keep numbers, units, codes and names (PRS-03, OP-001, OEE, Gemini, Dr. Macx). ${TRANSLATE[kind]} Return a JSON array of the same length, in the same order.`,
       responseMimeType: 'application/json',
       responseJsonSchema: { type: 'array', items: { type: 'string' } },
       temperature: 0.1,
@@ -278,22 +283,18 @@ export async function translateTexts(texts, lang) {
 
 const HANDOVER_SCHEMA = {
   type: 'object',
-  properties: {
-    summary: { type: 'string', description: 'The finished shift in 2-3 sentences for the history (English): OEE vs target, output vs plan, the biggest losses.' },
-    highlights: { type: 'array', items: { type: 'string' }, description: 'What the next shift must know (max 4): open stops, anomalies, unanswered questions, repeats.' },
-    advice: { type: 'array', items: { type: 'string' }, description: 'Concrete advice for the next shift (max 3).' },
-    say: { type: 'string', description: 'What I, the press, say aloud to the incoming shift: 3-4 short sentences, first person, plain text.' },
-  },
-  required: ['summary', 'highlights', 'advice', 'say'],
+  properties: { advice: { type: 'array', items: { type: 'string' }, description: 'Concrete advice for the next shift (max 3 short sentences, no numbers).' } },
+  required: ['advice'],
 };
 
-// Shift handover: summarise the finished shift and advise the next one (stored in English, translated on the kiosk).
+// Shift handover: the facts and numbers are written by handover.js; Gemini adds advice only, without numbers,
+// so nothing it says can contradict the screen.
 export async function handoverSummary(facts) {
   const res = await track('gemini', () => gemini().models.generateContent({
     model: MODEL,
     contents: JSON.stringify(facts),
     config: {
-      systemInstruction: `${soulVoice('en')}\nThe shift in "shift" has just ended. Hand over to the incoming shift: how the shift went, what is still open and what to watch.`,
+      systemInstruction: 'You advise the incoming shift of a stamping press. From the summary and losses given, write at most 3 short, concrete pieces of advice in English. Do not write any numbers; do not restate the summary.',
       responseMimeType: 'application/json',
       responseJsonSchema: HANDOVER_SCHEMA,
       temperature: 0.3,

@@ -9,6 +9,7 @@ import UpIcon from '@mui/icons-material/TrendingUpOutlined';
 import BreakdownIcon from '@mui/icons-material/BuildCircleOutlined';
 import { api } from './api.js';
 import { C, FACTORS, LEVELS } from './theme.js';
+import { useT } from './i18n.jsx';
 
 const STEPS = ['worse', 'normal', 'better'];
 const LOOK = { worse: { ...LEVELS.below, label: 'Lower' }, normal: { label: 'Normal', color: C.blueDark, bg: C.light }, better: { ...LEVELS.good, label: 'Better' } };
@@ -27,28 +28,30 @@ export function useSim(m) {
 
 // − Normal + for one OEE factor.
 export function FactorSim({ m, factor, sim }) {
-  const name = FACTORS.find((f) => f.key === factor)?.label ?? factor;
+  const t = useT();
+  const name = t(FACTORS.find((f) => f.key === factor)?.label ?? factor);
   const lv = sim.levels[factor] ?? 'normal';
   const look = LOOK[lv];
   const btn = { width: 24, height: 24, border: `1px solid ${C.line}`, borderRadius: '6px' };
   return (
     <Stack direction="row" alignItems="center" gap={0.5} onClick={(e) => e.stopPropagation()}>
-      <Tooltip describeChild title={`Simulation: lower ${name}`}>
-        <span><IconButton size="small" aria-label={`Simulation: lower ${name} on ${m.code}`} disabled={lv === 'worse'} onClick={() => sim.step(factor, -1)} sx={btn}><LowerIcon sx={{ fontSize: 16 }} /></IconButton></span>
+      <Tooltip describeChild title={`${t('Simulation')}: ${t('lower')} ${name}`}>
+        <span><IconButton size="small" aria-label={`${t('Simulation')}: ${t('lower')} ${name} · ${m.code}`} disabled={lv === 'worse'} onClick={() => sim.step(factor, -1)} sx={btn}><LowerIcon sx={{ fontSize: 16 }} /></IconButton></span>
       </Tooltip>
-      <Typography variant="caption" sx={{ minWidth: 48, textAlign: 'center', fontWeight: 700, borderRadius: '6px', bgcolor: look.bg, color: look.color, lineHeight: '22px' }}>{look.label}</Typography>
-      <Tooltip describeChild title={`Simulation: better ${name}`}>
-        <span><IconButton size="small" aria-label={`Simulation: better ${name} on ${m.code}`} disabled={lv === 'better'} onClick={() => sim.step(factor, 1)} sx={btn}><BetterIcon sx={{ fontSize: 16 }} /></IconButton></span>
+      <Typography variant="caption" sx={{ minWidth: 48, textAlign: 'center', fontWeight: 700, borderRadius: '6px', bgcolor: look.bg, color: look.color, lineHeight: '22px', px: 0.5 }}>{t(look.label)}</Typography>
+      <Tooltip describeChild title={`${t('Simulation')}: ${t('better')} ${name}`}>
+        <span><IconButton size="small" aria-label={`${t('Simulation')}: ${t('better')} ${name} · ${m.code}`} disabled={lv === 'better'} onClick={() => sim.step(factor, 1)} sx={btn}><BetterIcon sx={{ fontSize: 16 }} /></IconButton></span>
       </Tooltip>
     </Stack>
   );
 }
 
 export function BreakdownButton({ sim, sx }) {
+  const t = useT();
   return (
-    <Tooltip title="Simulation: the press breaks down now (hydraulic fault, alarm 310, 10–25 min)">
+    <Tooltip title={t('Simulation: the press breaks down now (hydraulic fault, alarm 310, 10–25 min)')}>
       <Button size="small" variant="outlined" color="error" startIcon={<BreakdownIcon />} onClick={() => sim.send({ inject: 'breakdown' })} sx={{ minHeight: 28, py: 0, px: 1.25, fontSize: 12.5, borderRadius: '6px', ...sx }}>
-        Breakdown
+        {t('Breakdown')}
       </Button>
     </Tooltip>
   );

@@ -69,3 +69,14 @@ export function minuteRow(a, m, mode) {
     sim_mode: mode ?? null,
   };
 }
+
+// A/P/Q and OEE over a few recent minute aggregates (newest may be the minute still running): reacts within a
+// minute, so a change on the press (or in the simulator) shows long before the shift total moves.
+export function windowOee(aggs, idealCycleTime) {
+  const t = aggs.reduce((a, m) => ({ run: a.run + m.runSec, planned: a.planned + m.secs - m.breakSec, parts: a.parts + m.parts, nc: a.nc + m.nc }), { run: 0, planned: 0, parts: 0, nc: 0 });
+  if (t.planned < 30) return null; // not enough planned time yet (start-up or a break)
+  const availability = Math.min(1, t.run / t.planned);
+  const performance = t.run ? Math.min(1.5, (t.parts * idealCycleTime) / t.run) : 0;
+  const quality = t.parts ? (t.parts - Math.min(t.nc, t.parts)) / t.parts : null;
+  return { availability, performance, quality, oee: quality == null ? 0 : availability * performance * quality, minutes: Math.round(t.planned / 60) };
+}

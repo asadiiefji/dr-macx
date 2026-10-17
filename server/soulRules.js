@@ -7,30 +7,33 @@ const dur = (sec) => {
   return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
 };
 
-// Target risk: at my current pace, will I reach the shift target (shift plan × OEE target) by shift end?
-// row = live row (total, ng, plannedSec, plan {toNow, shift}, idealCycleTime, targets).
+// Target risk, from the shift forecast the dashboard shows (row.forecast, oee.js shiftForecast).
 export function targetRisk(row) {
-  const good = row.total - row.ng;
-  const target = Math.ceil((row.plan.shift * (row.targets?.oee?.target ?? 85)) / 100);
-  const remainingSec = Math.max(0, (row.plan.shift - row.plan.toNow) * row.idealCycleTime);
-  if (!row.plannedSec || row.plannedSec < 1800 || remainingSec < 1200 || good >= target) return null; // too early, too late, or done
-  const rate = good / row.plannedSec; // good pieces per planned second so far
-  const projected = Math.round(good + rate * remainingSec);
-  if (projected >= target) return { atRisk: false, good, target, projected };
-  const needed = target - good;
-  return {
-    atRisk: true, good, target, projected, short: target - projected, needed,
-    remainingSec, paceSec: rate ? 1 / rate : null, neededPaceSec: remainingSec / needed,
-  };
+  const f = row.forecast;
+  if (!f || !row.plannedSec || row.plannedSec < 1800 || f.remainingSec < 1200 || f.good >= f.target) return null; // too early, too late, or done
+  if (f.projected >= f.target) return { atRisk: false, good: f.good, target: f.target, projected: f.projected };
+  const needed = f.target - f.good;
+  return { atRisk: true, good: f.good, target: f.target, projected: f.projected, short: f.target - f.projected, needed, best: f.best, reachable: f.reachable, remainingSec: f.remainingSec, paceSec: f.paceSec, neededPaceSec: f.remainingSec / needed };
 }
 
 export function riskText(r, idealCycleTime) {
+  if (!r.reachable) {
+    return (
+      `My target of ${fmt(r.target)} good pieces can't be reached this shift any more. ` +
+      `Even at my ideal cycle of ${idealCycleTime} seconds with no more stops I would make about ${fmt(r.best)}; at my current pace I will make about ${fmt(r.projected)}. ` +
+      'Short stops and quick restarts now get us as close as possible.'
+    );
+  }
   return (
     `With ${dur(r.remainingSec)} of planned time left, I need ${fmt(r.needed)} more good pieces to reach my target of ${fmt(r.target)}. ` +
-    `At my current pace of one good piece every ${r.paceSec ? r.paceSec.toFixed(1) : '—'} seconds I will make about ${fmt(r.projected)}, about ${fmt(r.short)} short. ` +
-    `I need one good piece every ${r.neededPaceSec.toFixed(1)} seconds; my ideal cycle is ${idealCycleTime} seconds, so fewer and shorter stops matter now.`
+    `At my current pace I will make about ${fmt(r.projected)}, about ${fmt(r.short)} short. ` +
+    `I need one good piece every ${r.neededPaceSec.toFixed(1)} seconds (my ideal is ${idealCycleTime}), so fewer and shorter stops matter now.`
   );
 }
+
+// Say it again only when something changed: an hour passed and the shortfall moved by 10 % of the target or more,
+// or the target went from reachable to out of reach. last = the data of the last risk message this shift.
+export const riskChanged = (r, last) => !last || last.reachable !== r.reachable || Math.abs((last.short ?? 0) - r.short) >= 0.1 * r.target;
 
 // Surprise: did the hour just finished fall below 85 % of what my own recent rate predicted?
 // hour / previous = hour buckets ({ plannedSec, total, ng }); previous = the hours before it (any order).
@@ -67,8 +70,28 @@ export function anomalies(row, mem, now) {
 }
 
 const hm = (t) => new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-export const surpriseText = (start, s) =>
-  `Between ${hm(start)} and ${hm(start + 3600e3)} I expected about ${fmt(s.expected)} good pieces, but I made ${fmt(s.actual)}. What happened? Press the mic and tell me.`;
+// The stops logged in that hour, by reason (minutes inside the hour), biggest first: what I propose as the cause.
+export function hourCauses(events, start) {
+  const end = start + 3600e3;
+  const by = new Map();
+  for (const e of events) {
+    const min = (Math.min(e.end ?? end, end) - Math.max(e.start, start)) / 60e3;
+    if (min <= 0) continue;
+    const c = by.get(e.reason) ?? by.set(e.reason, { reason: e.reason, count: 0, minutes: 0 }).get(e.reason);
+    c.count++;
+    c.minutes += min;
+  }
+  return [...by.values()].map((c) => ({ ...c, minutes: Math.round(c.minutes) })).sort((a, b) => b.minutes - a.minutes).slice(0, 3);
+}
+
+// I propose what I saw instead of only asking; the operator taps Yes / Partly / No (or says it).
+export const ANSWERS = { causes: ['Yes', 'Partly', 'No, something else'], none: ['Slow material feed', 'Quality checks', 'Operator away', 'Something else'] };
+export function surpriseText(start, s, causes = []) {
+  const head = `Between ${hm(start)} and ${hm(start + 3600e3)} I made ${fmt(s.actual)} good pieces; I expected about ${fmt(s.expected)}.`;
+  if (!causes.length) return `${head} I logged no stop that explains it. What happened?`;
+  const list = causes.map((c) => `${c.count > 1 ? `${c.count} × ` : ''}${c.reason} (${c.minutes} min)`).join(' and ');
+  return `${head} I logged ${list}. Was that it?`;
+}
 
 // A sensor out of its limits, in my own words. sensor = catalog entry (sensors.js), value = reading.
 export function anomalyText(m, sensor, value, state) {

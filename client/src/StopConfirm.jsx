@@ -10,6 +10,7 @@ import AiIcon from '@mui/icons-material/AutoAwesomeOutlined';
 import { api, useCollection, useGet } from './api.js';
 import { CategoryLabel, Mono, RepeatChip, TypeChip, duration } from './ui.jsx';
 import { C, CATEGORIES } from './theme.js';
+import { useT } from './i18n.jsx';
 
 // Languages operators may speak (browser speech recognition needs the language up front).
 export const LANGS = [
@@ -43,19 +44,19 @@ const BREAK = 'Operator break';
 export const fmtTime = (t) => new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 // Reason list grouped by category, in the fixed category order.
-function reasonItems(reasons, event) {
+function reasonItems(reasons, event, t) {
   return CATEGORIES.flatMap((c) => {
     const rs = reasons.filter((r) => r.category === c.name).sort((a, b) => a.code.localeCompare(b.code));
     if (!rs.length) return [];
     const locked = c.name === BREAK && !event.breakAllowed;
     return [
       <ListSubheader key={c.name}>
-        <CategoryLabel name={c.name} />
-        {locked && <Typography variant="caption" color="text.secondary" ml={1}>only for a stop within the break tolerance of a scheduled break</Typography>}
+        <CategoryLabel name={c.name} label={t(c.name)} />
+        {locked && <Typography variant="caption" color="text.secondary" ml={1}>{t('only for a stop within the break tolerance of a scheduled break')}</Typography>}
       </ListSubheader>,
       ...rs.map((r) => (
         <MenuItem key={r.code} value={r.code} disabled={locked}>
-          <Mono fontWeight={700}>{r.code}</Mono>&nbsp;· {r.name}
+          <Mono fontWeight={700}>{r.code}</Mono>&nbsp;· {t(r.name)}
           {r.type === 'planned' && <Box component="span" sx={{ ml: 1 }}><TypeChip type="planned" /></Box>}
         </MenuItem>
       )),
@@ -74,6 +75,7 @@ export function StopForm({ machineId, event, reasons, onSaved, operatorId, lang:
   const [saving, setSaving] = useState(false);
   const dictation = useDictation(lang, (text) => setNote((n) => `${n} ${text}`.trim()));
   const chosen = reasons.find((r) => r.code === code);
+  const t = useT();
 
   const suggest = async () => {
     setAi({ loading: true, result: null, error: '' });
@@ -101,9 +103,9 @@ export function StopForm({ machineId, event, reasons, onSaved, operatorId, lang:
     <Stack spacing={1.5}>
       <Stack direction="row" flexWrap="wrap" alignItems="center" gap={1}>
         <Typography fontWeight={700}>{fmtTime(event.start)}</Typography>
-        <Typography color="text.secondary">· {event.end ? duration(event.end - event.start) : 'still stopped'}</Typography>
-        <Typography color="text.secondary">· alarm <Mono fontWeight={700}>{event.alarmCode || 'none'}</Mono></Typography>
-        {event.breakAllowed && <Chip size="small" label="At a scheduled break" sx={{ bgcolor: '#E1F5FE', color: '#01579B' }} />}
+        <Typography color="text.secondary">· {event.end ? duration(event.end - event.start) : t('still stopped')}</Typography>
+        <Typography color="text.secondary">· {t('alarm')} <Mono fontWeight={700}>{event.alarmCode || t('none')}</Mono></Typography>
+        {event.breakAllowed && <Chip size="small" label={t('At a scheduled break')} sx={{ bgcolor: '#E1F5FE', color: '#01579B' }} />}
         <RepeatChip event={event} />
       </Stack>
 
@@ -112,7 +114,7 @@ export function StopForm({ machineId, event, reasons, onSaved, operatorId, lang:
         <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems={{ sm: 'flex-start' }}>
           <TextField
             size="small"
-            label="Operator note (speak or type, any language)"
+            label={t('Operator note (speak or type, any language)')}
             value={note}
             onChange={(e) => setNote(e.target.value)}
             multiline
@@ -122,12 +124,12 @@ export function StopForm({ machineId, event, reasons, onSaved, operatorId, lang:
           />
           {dictation.supported && (
             <>
-              <TextField select size="small" label="Spoken language" value={lang} onChange={(e) => setLang(e.target.value)} sx={{ minWidth: 160 }} disabled={dictation.listening}>
+              <TextField select size="small" label={t('Spoken language')} value={lang} onChange={(e) => setLang(e.target.value)} sx={{ minWidth: 160 }} disabled={dictation.listening}>
                 {LANGS.map(([v, l]) => <MenuItem key={v} value={v}>{l}</MenuItem>)}
               </TextField>
-              <Tooltip title={dictation.listening ? 'Stop recording' : 'Record the operator'}>
+              <Tooltip title={t(dictation.listening ? 'Stop recording' : 'Record the operator')}>
                 <IconButton
-                  aria-label={dictation.listening ? 'Stop recording' : 'Record the operator'}
+                  aria-label={t(dictation.listening ? 'Stop recording' : 'Record the operator')}
                   onClick={dictation.listening ? dictation.stop : dictation.start}
                   sx={{ border: `1px solid ${C.line}`, color: dictation.listening ? 'error.main' : 'primary.main', width: 44, height: 40 }}
                 >
@@ -137,24 +139,24 @@ export function StopForm({ machineId, event, reasons, onSaved, operatorId, lang:
             </>
           )}
           <Button variant="outlined" startIcon={ai.loading ? <CircularProgress size={16} /> : <AiIcon />} onClick={suggest} disabled={ai.loading} sx={{ flex: 'none' }}>
-            Suggest with Gemini
+            {t('Suggest with Gemini')}
           </Button>
         </Stack>
-        {dictation.listening && <Typography variant="caption" color="error.main" mt={0.5} component="div">Recording… speak, then press stop.</Typography>}
+        {dictation.listening && <Typography variant="caption" color="error.main" mt={0.5} component="div">{t('Recording… speak, then press stop.')}</Typography>}
         {dictation.error && <Typography variant="caption" color="error" component="div" mt={0.5}>{dictation.error}</Typography>}
         {ai.error && <Alert severity="error" sx={{ mt: 1 }}>{ai.error}</Alert>}
         {r && (
           <Stack spacing={0.5} mt={1.25}>
             {r.translation && (
-              <Typography variant="body2"><b>Translation{r.language ? ` (${r.language})` : ''}:</b> {r.translation}</Typography>
+              <Typography variant="body2"><b>{t('Translation')}{r.language ? ` (${r.language})` : ''}:</b> {r.translation}</Typography>
             )}
             <Typography variant="body2">
-              <b>Gemini suggests:</b> {r.reasonCode ? `${r.reasonCode} · ${reasons.find((x) => x.code === r.reasonCode)?.name ?? ''}` : 'no fitting reason; pick one'}
-              {r.confidence != null && ` (${Math.round(Number(r.confidence) * 100)}% sure)`}
+              <b>{t('Gemini suggests')}:</b> {r.reasonCode ? `${r.reasonCode} · ${t(reasons.find((x) => x.code === r.reasonCode)?.name ?? '')}` : t('no fitting reason; pick one')}
+              {r.confidence != null && ` (${Math.round(Number(r.confidence) * 100)}% ${t('sure')})`}
             </Typography>
-            {r.rationale && <Typography variant="body2" color="text.secondary">Why: {r.rationale}</Typography>}
-            {r.machineCondition && <Typography variant="body2" color="text.secondary">Machine: {r.machineCondition}</Typography>}
-            <Typography variant="caption" color="text.secondary">Suggested by {r.model}. Check it, then confirm.</Typography>
+            {r.rationale && <Typography variant="body2" color="text.secondary">{t('Why')}: {t(r.rationale)}</Typography>}
+            {r.machineCondition && <Typography variant="body2" color="text.secondary">{t('Machine')}: {t(r.machineCondition)}</Typography>}
+            <Typography variant="caption" color="text.secondary">{t('Suggested by')} {r.model}. {t('Check it, then confirm.')}</Typography>
           </Stack>
         )}
       </Box>
@@ -164,18 +166,18 @@ export function StopForm({ machineId, event, reasons, onSaved, operatorId, lang:
         <TextField
           select
           size="small"
-          label="Downtime reason"
+          label={t('Downtime reason')}
           value={code}
           onChange={(e) => setCode(e.target.value)}
-          helperText={chosen ? (chosen.type === 'planned' ? 'Planned: excluded from OEE.' : 'Unplanned: counts as a loss in OEE.') : event.suggested ? 'Suggested from the PLC alarm.' : ' '}
+          helperText={chosen ? t(chosen.type === 'planned' ? 'Planned: excluded from OEE.' : 'Unplanned: counts as a loss in OEE.') : event.suggested ? t('Suggested from the PLC alarm.') : ' '}
           slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
           sx={{ flex: 2 }}
         >
-          <MenuItem value="" disabled>Pick a reason</MenuItem>
-          {reasonItems(reasons, event)}
+          <MenuItem value="" disabled>{t('Pick a reason')}</MenuItem>
+          {reasonItems(reasons, event, t)}
         </TextField>
-        <TextField size="small" label="Comment (English)" value={comment} onChange={(e) => setComment(e.target.value)} slotProps={{ htmlInput: { maxLength: 500 } }} sx={{ flex: 2 }} />
-        <Button variant="contained" onClick={save} disabled={!code || saving} sx={{ flex: 'none' }}>Confirm</Button>
+        <TextField size="small" label={t('Comment (English)')} value={comment} onChange={(e) => setComment(e.target.value)} slotProps={{ htmlInput: { maxLength: 500 } }} sx={{ flex: 2 }} />
+        <Button variant="contained" onClick={save} disabled={!code || saving} sx={{ flex: 'none' }}>{t('Confirm')}</Button>
       </Stack>
     </Stack>
   );

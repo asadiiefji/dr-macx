@@ -1,12 +1,12 @@
 // Shift handover: when a shift ends, each press summarises it (Gemini) into machines/{id}/handovers/{shiftStart}
 // and tells the incoming shift through the Machine Soul. The shift start as doc id makes it once per shift.
 import { handoverSummary } from './ai.js';
-import { currentShift, oee, schedulePlan } from './oee.js';
+import { currentShift, oee, schedulePlan, shiftForecast } from './oee.js';
 import { downtimeStats } from './analysis.js';
 import { DEFAULT_TARGETS } from './validate.js';
 
 const pct = (v) => (v == null ? null : Math.round(v * 1000) / 10);
-const iso = (t) => new Date(t).toISOString();
+const fmt = (n) => Math.round(n).toLocaleString('en-US');
 
 export function handoverRoutes(app, { db, live, say, shiftData }) {
   const handovers = (id) => db.collection(`machines/${id}/handovers`);
@@ -19,45 +19,46 @@ export function handoverRoutes(app, { db, live, say, shiftData }) {
     if ((await ref.get()).exists) return;
     const mdoc = await db.doc(`machines/${id}`).get();
     const m = mdoc.data();
-    const { events, buckets, sum } = await shiftData(id, shift);
+    const { events: raw, buckets, sum } = await shiftData(id, shift);
     if (!sum.plannedSec) return; // the press did not run this shift
+    // only the minutes inside this shift count (a stop still open, or running over the shift end, is cut)
+    const events = raw.map((e) => ({ ...e, minutes: Math.max(0, (Math.min(e.end ?? shift.end, shift.end) - Math.max(e.start, shift.start)) / 60e3) }));
     const k = oee(sum);
     const stats = downtimeStats(events, sum, buckets, shift.start, shift.end);
     const targets = m.targets ?? DEFAULT_TARGETS;
     const plan = schedulePlan(shift, shift.end, live.settings().breaks, sum.plannedStopSec, m.idealCycleTime).shift;
+    const f = shiftForecast({ good: sum.total - sum.ng, plannedSec: sum.plannedSec, plan: { toNow: plan, shift: plan }, idealCycleTime: m.idealCycleTime, oeeTarget: targets.oee.target });
     const said = (await db.collection(`machines/${id}/soul`).where('at', '>=', shift.start).where('at', '<', shift.end).get()).docs.map((d) => d.data());
-    const facts = {
-      press: { code: m.code, name: m.name, setup: m.setup },
-      shift: { name: shift.name, from: iso(shift.start), to: iso(shift.end) },
-      nextShift: currentShift(shift.end).name,
-      oeePct: { oee: pct(k.oee), availability: pct(k.availability), performance: pct(k.performance), quality: pct(k.quality) },
-      targetsPct: targets,
-      output: { good: sum.total - sum.ng, nc: sum.ng, total: sum.total, plan },
-      downtime: {
-        stops: stats.stops, waitingForReason: stats.unconfirmedStops, unplannedMin: stats.unplannedMin, plannedMin: stats.plannedMin, repeatedStops: stats.repeatedStops,
-        top: stats.reasons.slice(0, 5).map(({ code, reason, type, count, minutes, repeatedStops }) => ({ code, reason, type, count, minutes, repeatedStops })),
-      },
-      sensorWarnings: said.filter((x) => x.kind === 'anomaly').map((x) => x.text).slice(0, 8),
-      unansweredQuestions: said.filter((x) => x.needsAnswer && !x.answered).map((x) => x.text),
-    };
-    let out;
+    const nextShift = currentShift(shift.end).name;
+    const top = stats.reasons.find((r) => r.type !== 'planned');
+    const warnings = said.filter((x) => x.kind === 'anomaly');
+    const unanswered = said.filter((x) => x.needsAnswer && !x.answered).length;
+
+    // The numbers are written here, from the same data as the history page; Gemini only adds advice (no numbers).
+    const summary =
+      `${shift.name}: OEE ${pct(k.oee)}% (target ${targets.oee.target}%). ${fmt(f.good)} good pieces of the ${fmt(f.target)} target ` +
+      `(${fmt(plan)} planned at the ideal cycle). ${stats.stops} stops, ${Math.round(stats.unplannedMin)} min unplanned` +
+      (top ? `; most time lost to ${top.reason} (${top.count}×, ${Math.round(top.minutes)} min).` : '.');
+    const highlights = [
+      stats.unconfirmedStops ? `${stats.unconfirmedStops} stops still wait for a reason.` : null,
+      warnings.length ? `${warnings.length} sensor warnings, the last: ${warnings.sort((a, b) => b.at - a.at)[0].text}` : null,
+      unanswered ? `${unanswered} of my questions are still unanswered.` : null,
+    ].filter(Boolean);
+    let advice = [];
     let ai = true;
     try {
-      out = await handoverSummary(facts);
+      advice = (await handoverSummary({
+        press: { code: m.code, setup: m.setup }, shift: shift.name, nextShift, summary, highlights,
+        topLosses: stats.reasons.slice(0, 3).map(({ reason, type, count, minutes }) => ({ reason, type, count, minutes: Math.round(minutes) })),
+      })).advice ?? [];
     } catch (e) {
       console.error(`handover ${m.code} AI failed:`, e.message);
       ai = false;
-      const top = facts.downtime.top[0];
-      out = {
-        summary: `${shift.name}: OEE ${facts.oeePct.oee}% (target ${targets.oee.target}%), ${facts.output.good} good of ${plan} planned, ${stats.stops} stops${top ? `, mostly ${top.reason} (${top.minutes} min)` : ''}.`,
-        highlights: [stats.unconfirmedStops ? `${stats.unconfirmedStops} stops still wait for a reason.` : null, ...facts.sensorWarnings.slice(0, 2)].filter(Boolean),
-        advice: [],
-      };
-      out.say = `Hello ${facts.nextShift}. ${out.summary} ${out.highlights.join(' ')}`;
     }
+    const out = { summary, highlights, advice, say: [`Hello ${nextShift}. Here is how the last shift went.`, summary, ...highlights.slice(0, 1), advice[0]].filter(Boolean).join(' ') };
     const doc = {
       shift: shift.name, start: shift.start, end: shift.end, at: Date.now(), ai,
-      ...k, good: facts.output.good, nc: sum.ng, plan, stops: stats.stops, unplannedMin: stats.unplannedMin,
+      ...k, good: f.good, nc: sum.ng, plan, target: f.target, stops: stats.stops, unplannedMin: Math.round(stats.unplannedMin),
       summary: out.summary, highlights: out.highlights, advice: out.advice, say: out.say,
     };
     await ref.set(doc);

@@ -3,11 +3,13 @@
 // m = live row (frameType, nodes, setup, readings, sensorStatus, status, ratedTonnage, nodeTolerancePct).
 // lit = { part, node } to light (else the worst sensor). The readout comes from the same live readings.
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
-import { Box, Card, Chip, LinearProgress, Stack, ToggleButton, ToggleButtonGroup, Typography, useMediaQuery } from '@mui/material';
+import { Box, Button, Card, Chip, LinearProgress, ListItemText, Menu, MenuItem, Stack, ToggleButton, ToggleButtonGroup, Typography, useMediaQuery } from '@mui/material';
+import ListIcon from '@mui/icons-material/SensorsRounded';
 import { C, LEVELS } from '../theme.js';
 import { num } from '../ui.jsx';
+import { useT } from '../i18n.jsx';
 import { sensorsFor, useSensorCatalog, valueOf } from '../sensors.js';
-import { NODE_PLACE, TONES, findPart, pressParts, worstPart } from './pressParts.js';
+import { TONES, findPart, pressParts, worstPart } from './pressParts.js';
 
 const Press3D = lazy(() => import('./Press3D.jsx'));
 
@@ -97,7 +99,7 @@ const depth = (p) => {
 };
 const top = (p) => (p.kind === 'box' ? [p.pos[0] + p.size[0] / 2, p.pos[1] + p.size[1], p.pos[2] + p.size[2] / 2] : p.kind === 'line' ? p.points.at(-1) : [p.center[0], p.center[1] + (p.r ?? 0), p.center[2]]);
 
-function Drawing({ parts, litPart, running, reduced, onFocus }) {
+function Drawing({ parts, litPart, running, reduced, onFocus, onPick }) {
   const [phase, setPhase] = useState(0);
   useEffect(() => {
     if (!running || reduced) return;
@@ -125,11 +127,9 @@ function Drawing({ parts, litPart, running, reduced, onFocus }) {
         return (
           <g
             key={p.id}
-            tabIndex={sensorPart ? 0 : -1}
-            aria-label={sensorPart ? p.name : undefined}
             onMouseEnter={() => sensorPart && onFocus(p.id)}
-            onFocus={() => sensorPart && onFocus(p.id)}
-            style={{ cursor: sensorPart ? 'pointer' : 'default', outline: 'none' }}
+            onClick={() => sensorPart && onPick(p.id)}
+            style={{ cursor: sensorPart ? 'pointer' : 'default' }}
           >
             <Shape p={p} lit={litPart?.id === p.id} dy={p.moves ? dy : 0} />
           </g>
@@ -141,86 +141,122 @@ function Drawing({ parts, litPart, running, reduced, onFocus }) {
           <Shape p={litPart} lit dy={litPart.moves ? dy : 0} />
         </g>
       )}
-      {/* a dot on every part that carries a sensor */}
+      {/* a dot on every part that carries a sensor, with a wide invisible ring so it is easy to hover, click or Tab to */}
       {parts.filter((p) => p.part).map((p) => {
         const [x, y] = iso(top(p));
         const lit = litPart?.id === p.id;
-        return <circle key={`dot-${p.id}`} cx={x} cy={y - 8} r={lit ? 7 : 5} fill={lit ? ACCENT : C.blue} stroke="#fff" strokeWidth={2} pointerEvents="none" />;
+        return (
+          <g
+            key={`dot-${p.id}`} role="button" tabIndex={0} aria-label={p.name} aria-pressed={lit}
+            onMouseEnter={() => onFocus(p.id)} onFocus={() => onFocus(p.id)} onClick={() => onPick(p.id)}
+            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onPick(p.id))}
+            style={{ cursor: 'pointer', outline: 'none' }}
+          >
+            <circle cx={x} cy={y - 8} r={18} fill="transparent" />
+            <circle cx={x} cy={y - 8} r={lit ? 8 : 6} fill={lit ? ACCENT : C.blue} stroke="#fff" strokeWidth={2} />
+          </g>
+        );
       })}
     </svg>
   );
 }
 
+const FRAME = { 'straight-side': 'Straight-side', 'c-frame': 'C-frame' };
+
 export default function Anatomy({ m, lit, title = 'Press anatomy', number = 1, height = 420 }) {
+  const t = useT();
   const catalog = useSensorCatalog();
   const reduced = useMediaQuery('(prefers-reduced-motion: reduce)');
   const [view, setView] = useState('drawing');
   const [hover, setHover] = useState(null);
+  const [picked, setPicked] = useState(null); // a part chosen from the list or by a click: stays lit
+  const [menu, setMenu] = useState(null);
   const [tour, setTour] = useState(0);
   const parts = useMemo(() => pressParts(m), [m.frameType, m.nodes, m.setup]); // eslint-disable-line react-hooks/exhaustive-deps
   const sensors = sensorsFor(m, catalog);
   const worst = lit ?? worstPart(m, sensors);
   const sensorParts = parts.filter((p) => p.part);
 
+  useEffect(() => setPicked(null), [lit?.part, lit?.node]); // a new event to show: back to what it points at
+
   // idle tour through the sensor parts when nothing is wrong and nobody is pointing
   useEffect(() => {
-    if (worst || hover || reduced) return;
+    if (worst || hover || picked || reduced) return;
     const t = setInterval(() => setTour((i) => i + 1), 2600);
     return () => clearInterval(t);
-  }, [worst, hover, reduced]);
+  }, [worst, hover, picked, reduced]);
 
-  const litPart = hover ? parts.find((p) => p.id === hover) : findPart(parts, worst) ?? sensorParts[tour % Math.max(1, sensorParts.length)];
-  const onPart = litPart && sensors.filter((s) => (litPart.part === 'loadCell' ? s.node === litPart.node : s.part === litPart.part));
+  const chosen = hover ?? picked;
+  const litPart = chosen ? parts.find((p) => p.id === chosen) : findPart(parts, worst) ?? sensorParts[tour % Math.max(1, sensorParts.length)];
+  const sensorsOn = (p) => sensors.filter((s) => (p.part === 'loadCell' ? s.node === p.node : s.part === p.part));
+  const stateOf = (p) => sensorsOn(p).map((s) => m.sensorStatus?.[s.id]).sort((a, b) => ['alarm', 'warn'].indexOf(b) - ['alarm', 'warn'].indexOf(a))[0];
+  const onPart = litPart && sensorsOn(litPart);
 
+  const alarmColor = worst && !chosen ? (worst.state === 'alarm' ? LEVELS.below.color : LEVELS.near.color) : C.ink;
+  // Header, drawing and readout are stacked (no text over the drawing), so every label stays readable.
   return (
-    <Card sx={{ position: 'relative', height, p: 0, overflow: 'hidden', bgcolor: '#FBFDFF' }} onMouseLeave={() => setHover(null)}>
-      {/* corner: number + title */}
-      <Box sx={{ position: 'absolute', top: 12, left: 14, zIndex: 1 }}>
-        <Typography variant="overline" component="div" lineHeight={1.2}>FIG. {number}</Typography>
-        <Typography fontWeight={800}>{title}</Typography>
-        <Typography variant="caption" color="text.secondary">{m.ratedTonnage} t {m.frameType} · {m.setup === 'premium' ? 'Premium' : 'Essential'} sensors</Typography>
-      </Box>
-      {/* corner: hint + view toggle */}
-      <Stack sx={{ position: 'absolute', top: 12, right: 12, zIndex: 1 }} alignItems="flex-end" gap={0.5}>
-        <ToggleButtonGroup size="small" exclusive value={view} onChange={(e, v) => v && setView(v)} aria-label="Anatomy view">
-          <ToggleButton value="drawing">Drawing</ToggleButton>
-          <ToggleButton value="3d">3D</ToggleButton>
-        </ToggleButtonGroup>
-        <Typography variant="caption" color="text.secondary">{view === '3d' ? 'Drag to turn · hover a part' : 'Hover or Tab to a dot'}</Typography>
+    <Card sx={{ height, p: 0, overflow: 'hidden', bgcolor: '#FBFDFF', display: 'flex', flexDirection: 'column', borderRadius: '12px' }} onMouseLeave={() => setHover(null)}>
+      <Stack direction="row" alignItems="flex-start" gap={1} sx={{ px: 1.75, pt: 1.25, pb: 0.5 }}>
+        <Box flex={1} minWidth={0}>
+          <Typography variant="overline" component="div" lineHeight={1.2}>FIG. {number}</Typography>
+          <Typography fontWeight={800} noWrap>{title}</Typography>
+          <Typography variant="caption" color="text.secondary" noWrap component="div">{m.ratedTonnage} t {t(FRAME[m.frameType] ?? m.frameType)} · {t(m.setup === 'premium' ? 'Premium sensors' : 'Essential sensors')}</Typography>
+        </Box>
+        <Stack alignItems="flex-end" gap={0.75} flex="none">
+          <ToggleButtonGroup size="small" exclusive value={view} onChange={(e, v) => v && setView(v)} aria-label={t('Anatomy view')} sx={{ '& .MuiToggleButton-root': { py: 0.25, px: 1.25 } }}>
+            <ToggleButton value="drawing">{t('Drawing')}</ToggleButton>
+            <ToggleButton value="3d">3D</ToggleButton>
+          </ToggleButtonGroup>
+          <Button size="small" variant="outlined" startIcon={<ListIcon />} onClick={(e) => setMenu(e.currentTarget)} aria-haspopup="menu" sx={{ minHeight: 28, py: 0, bgcolor: '#fff', borderRadius: '8px' }}>
+            {t('Sensors')} ({sensorParts.length})
+          </Button>
+        </Stack>
       </Stack>
-      <Box sx={{ position: 'absolute', inset: 0, pt: 7, pb: 9 }}>
+      <Menu anchorEl={menu} open={!!menu} onClose={() => setMenu(null)} slotProps={{ paper: { sx: { maxHeight: 360 } } }}>
+        {sensorParts.map((p) => {
+          const st = stateOf(p);
+          return (
+            <MenuItem key={p.id} selected={litPart?.id === p.id} onClick={() => (setPicked(p.id), setMenu(null))} dense>
+              <ListItemText primary={t(p.name)} secondary={sensorsOn(p).map((s) => `${t(s.short)}: ${num(valueOf(m.readings, s))} ${s.unit}`).join(' · ') || t('No reading')} />
+              {st && st !== 'ok' && <Chip size="small" label={t(st === 'alarm' ? 'Alarm' : 'Warning')} sx={{ ml: 1, bgcolor: st === 'alarm' ? LEVELS.below.bg : LEVELS.near.bg, color: st === 'alarm' ? LEVELS.below.color : LEVELS.near.color }} />}
+            </MenuItem>
+          );
+        })}
+        {picked && <MenuItem onClick={() => (setPicked(null), setMenu(null))} dense sx={{ color: C.blue, fontWeight: 700 }}>{t('Back to the live problem part')}</MenuItem>}
+      </Menu>
+      <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>
         {view === 'drawing' ? (
-          <Drawing parts={parts} litPart={litPart} running={m.status === 'running'} reduced={reduced} onFocus={setHover} />
+          <Drawing parts={parts} litPart={litPart} running={m.status === 'running'} reduced={reduced} onFocus={setHover} onPick={setPicked} />
         ) : (
           <Suspense fallback={<LinearProgress />}>
-            <Press3D parts={parts} litId={litPart?.id} running={m.status === 'running'} reduced={reduced} onHover={setHover} />
+            <Press3D parts={parts} litId={litPart?.id} running={m.status === 'running'} reduced={reduced} onHover={setHover} onPick={setPicked} />
           </Suspense>
         )}
       </Box>
-      {/* corner: live readout for the lit part (from the same readings) */}
-      <Box sx={{ position: 'absolute', left: 14, bottom: 12, right: 150, zIndex: 1 }} aria-live="polite">
-        <Typography fontWeight={800} sx={{ color: worst && !hover ? (worst.state === 'alarm' ? LEVELS.below.color : LEVELS.near.color) : C.ink }}>
-          {litPart?.name ?? '—'}
-        </Typography>
-        <Stack direction="row" gap={1.5} flexWrap="wrap">
+      {/* readout of the highlighted part, from the same live readings, below the drawing */}
+      <Box sx={{ px: 1.75, py: 1, borderTop: `1px solid ${C.line}`, bgcolor: '#FFFFFF' }} aria-live="polite">
+        <Stack direction="row" alignItems="center" gap={1}>
+          <Typography fontWeight={800} noWrap flex={1} minWidth={0} sx={{ color: alarmColor }}>{litPart ? t(litPart.name) : '—'}</Typography>
+          <Stack direction="row" gap={1} flex="none" alignItems="center">
+            <Typography variant="caption" sx={{ color: C.blue, fontWeight: 700 }}>● {t('sensor')}</Typography>
+            <Typography variant="caption" sx={{ color: ACCENT, fontWeight: 700 }}>■ {t('transmitter')}</Typography>
+          </Stack>
+        </Stack>
+        <Stack direction="row" columnGap={1.5} rowGap={0.25} flexWrap="wrap">
           {onPart?.length ? (
             onPart.map((s) => (
-              <Typography key={s.id} variant="body2">
-                {s.short}: <b>{num(valueOf(m.readings, s))} {s.unit}</b>
-                {s.node ? ` (nominal ${Math.round(m.ratedTonnage / m.nodes)} t ±${m.nodeTolerancePct}%, ${NODE_PLACE[s.node] ?? ''})` : ''}
-                {m.sensorStatus?.[s.id] && m.sensorStatus[s.id] !== 'ok' ? ` · ${m.sensorStatus[s.id] === 'alarm' ? 'ALARM' : 'warning'}` : ''}
+              <Typography key={s.id} variant="body2" sx={{ fontSize: 13 }}>
+                {t(s.short)}: <b>{num(valueOf(m.readings, s))} {s.unit}</b>
+                {s.node ? ` (${t('nominal')} ${Math.round(m.ratedTonnage / m.nodes)} t ±${m.nodeTolerancePct}%)` : ''}
+                {m.sensorStatus?.[s.id] && m.sensorStatus[s.id] !== 'ok' ? ` · ${t(m.sensorStatus[s.id] === 'alarm' ? 'Alarm' : 'Warning').toUpperCase()}` : ''}
               </Typography>
             ))
           ) : (
-            <Typography variant="body2" color="text.secondary">No sensor on this part.</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ fontSize: 13 }}>{t('No sensor on this part.')}</Typography>
           )}
         </Stack>
+        <Typography variant="caption" color="text.secondary">{t(view === '3d' ? 'Drag to turn · click a part' : 'Hover or click a dot')}</Typography>
       </Box>
-      {/* corner: legend */}
-      <Stack sx={{ position: 'absolute', right: 12, bottom: 12, zIndex: 1 }} gap={0.5} alignItems="flex-end">
-        <Chip size="small" label="● sensor" sx={{ bgcolor: '#fff', color: C.blue, border: `1px solid ${C.line}` }} />
-        <Chip size="small" label="■ lit part" sx={{ bgcolor: '#fff', color: ACCENT, border: `1px solid ${C.line}` }} />
-      </Stack>
     </Card>
   );
 }

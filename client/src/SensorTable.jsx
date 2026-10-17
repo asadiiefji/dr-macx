@@ -5,12 +5,14 @@ import { api } from './api.js';
 import { Mono, num } from './ui.jsx';
 import { LEVELS } from './theme.js';
 import { MOTOR, sensorsFor, useSensorCatalog, valueOf } from './sensors.js';
+import { useT } from './i18n.jsx';
 
 const STATE = { ok: { ...LEVELS.good, label: 'OK' }, warn: { ...LEVELS.near, label: 'Warning' }, alarm: { ...LEVELS.below, label: 'Alarm' } };
 
 export function StateChip({ state }) {
+  const t = useT();
   const s = STATE[state];
-  return s ? <Chip size="small" label={s.label} sx={{ bgcolor: s.bg, color: s.color, fontWeight: 700 }} /> : null;
+  return s ? <Chip size="small" label={t(s.label)} sx={{ bgcolor: s.bg, color: s.color, fontWeight: 700 }} /> : null;
 }
 
 const show = (s, v, m) => {
@@ -51,12 +53,13 @@ export default function SensorTable({ m, master, onPick, picked }) {
 
 // Essential presses have no vision camera: the operator logs NC pieces here.
 export function NcEntry({ machineId, operatorId, onDone }) {
+  const t = useT();
   const [count, setCount] = useState('');
   const [msg, setMsg] = useState(null);
   const save = async () => {
     try {
       await api(`/machines/${machineId}/nc`, { method: 'POST', body: { count: Number(count), operatorId } });
-      setMsg({ severity: 'success', text: `${count} NC piece${Number(count) > 1 ? 's' : ''} logged.` });
+      setMsg({ severity: 'success', text: `${count} NC · ${t('logged')}` });
       setCount('');
       onDone?.();
     } catch (e) {
@@ -66,8 +69,8 @@ export function NcEntry({ machineId, operatorId, onDone }) {
   return (
     <Box>
       <Stack direction="row" gap={1} alignItems="flex-start">
-        <TextField size="small" type="number" label="NC pieces found" value={count} onChange={(e) => setCount(e.target.value)} slotProps={{ htmlInput: { min: 1, max: 10000 } }} sx={{ width: 170 }} />
-        <Button variant="outlined" onClick={save} disabled={!(Number(count) >= 1)}>Log NC</Button>
+        <TextField size="small" type="number" label={t('NC pieces found')} value={count} onChange={(e) => setCount(e.target.value)} slotProps={{ htmlInput: { min: 1, max: 10000 } }} sx={{ width: 170 }} />
+        <Button variant="outlined" onClick={save} disabled={!(Number(count) >= 1)}>{t('Log NC')}</Button>
       </Stack>
       {msg && <Alert severity={msg.severity} sx={{ mt: 1 }} onClose={() => setMsg(null)}>{msg.text}</Alert>}
     </Box>

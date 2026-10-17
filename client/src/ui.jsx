@@ -3,6 +3,7 @@ import CheckIcon from '@mui/icons-material/CheckCircleOutlined';
 import NearIcon from '@mui/icons-material/ReportProblemOutlined';
 import BelowIcon from '@mui/icons-material/ErrorOutlined';
 import { MONO, STATUS, SKILLS, C, CATEGORIES, LEVELS, level } from './theme.js';
+import { useT } from './i18n.jsx';
 
 export const pct = (v) => (v == null ? '—' : `${(v * 100).toFixed(1)}%`);
 export const num = (v) => (v == null ? '—' : v.toLocaleString());
@@ -43,11 +44,12 @@ export function PageHeader({ overline, title, children }) {
 }
 
 export function StatusChip({ status }) {
+  const t = useT();
   const s = STATUS[status] ?? STATUS.disconnected;
   return (
     <Chip
       size="small"
-      label={s.label}
+      label={t(s.label)}
       icon={<Box component="span" sx={{ width: 10, height: 10, flex: 'none', ...s.dot }} />}
       sx={{ bgcolor: s.bg, color: s.fg, fontWeight: 600, pl: 0.75, '& .MuiChip-icon': { ml: 0, mr: 0 } }}
     />
@@ -110,23 +112,25 @@ export const Mono = (props) => <Box component="span" sx={{ fontFamily: MONO }} {
 export const categoryColor = (name) => CATEGORIES.find((c) => c.name === name)?.color ?? CATEGORIES.at(-1).color;
 
 // A downtime category always shows its name next to its color.
-export function CategoryLabel({ name }) {
+export function CategoryLabel({ name, label = name }) {
   return (
     <Stack direction="row" alignItems="center" gap={1} component="span">
       <Box component="span" sx={{ width: 10, height: 10, borderRadius: '2px', bgcolor: categoryColor(name), flex: 'none' }} />
-      {name}
+      {label}
     </Stack>
   );
 }
 
 // Planned stops are excluded from OEE; unplanned ones are losses.
 export function TypeChip({ type }) {
+  const t = useT();
   const planned = type === 'planned';
-  return <Chip size="small" variant="outlined" label={planned ? 'Planned' : 'Unplanned'} sx={{ borderColor: planned ? '#90CAF9' : '#CBD5E1', color: planned ? '#0D47A1' : '#475569' }} />;
+  return <Chip size="small" variant="outlined" label={t(planned ? 'Planned' : 'Unplanned')} sx={{ borderColor: planned ? '#90CAF9' : '#CBD5E1', color: planned ? '#0D47A1' : '#475569' }} />;
 }
 
 // A repeated case: the same reason 3+ times on this machine within 24 h.
 export function RepeatChip({ event }) {
+  const t = useT();
   if (!event.repeated) return null;
-  return <Chip size="small" label={`Repeated ×${event.repeatCount} in 24 h`} sx={{ bgcolor: '#FFEBEE', color: '#C62828' }} />;
+  return <Chip size="small" label={`${t('Repeated')} ×${event.repeatCount} · 24 h`} sx={{ bgcolor: '#FFEBEE', color: '#C62828' }} />;
 }

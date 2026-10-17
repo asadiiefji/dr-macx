@@ -1,12 +1,12 @@
 // Live layer: reads each active press's sensors every second (simulator now, PLC via Kepware later),
 // turns them into OEE tags, records hourly OEE buckets and downtime events to Firestore, sends per-minute
 // sensor summaries to BigQuery, and serves the current-shift snapshot.
-import { currentShift, onBreak, breakIn, oee, add, ZERO, excludePlanned, schedulePlan } from './oee.js';
+import { currentShift, onBreak, breakIn, oee, add, ZERO, excludePlanned, schedulePlan, shiftForecast } from './oee.js';
 import { newDummy, dummyStep, injectFault, levelOf, MODES, INJECT, FACTORS } from './dummy.js';
 import { newRecorder, record } from './recorder.js';
 import { DEFAULT_TARGETS } from './validate.js';
 import { pressDefaults, toOeeTags, sensorsFor, judge, valueOf, motorState, ownReadings } from './sensors.js';
-import { minuteOf, newMinute, addReading, minuteRow } from './telemetry.js';
+import { minuteOf, newMinute, addReading, minuteRow, windowOee } from './telemetry.js';
 import { insertRows, bqEnabled } from './bq.js';
 
 export const DEFAULT_SETTINGS = { breaks: [], breakToleranceMin: 5 };
@@ -56,7 +56,7 @@ export function startLive(db) {
   function ensure(m, now) {
     let s = state.get(m.id);
     if (!s) {
-      s = { gen: newDummy(), rec: newRecorder(), tags: null, readings: null, status: null, since: now, ready: false, pending: [], recent: [], manualNc: 0, agg: null, rows: [], trail: [] };
+      s = { gen: newDummy(), rec: newRecorder(), tags: null, readings: null, status: null, since: now, ready: false, pending: [], recent: [], manualNc: 0, agg: null, rows: [], trail: [], lastMinutes: [] };
       state.set(m.id, s);
       // Stops waiting for an operator to confirm the reason, kept live for the monitoring cards.
       s.unwatch = watch(db.collection(`machines/${m.id}/downtime`).where('confirmed', '==', false), (snap) => {
@@ -98,7 +98,11 @@ export function startLive(db) {
         if (s.trail.length > 180) s.trail.shift();
         // per-minute sensor summary for BigQuery
         const minute = minuteOf(now);
-        if (s.agg && s.agg.start !== minute) s.rows.push(minuteRow(s.agg, m, s.gen.mode));
+        if (s.agg && s.agg.start !== minute) {
+          s.rows.push(minuteRow(s.agg, m, s.gen.mode));
+          s.lastMinutes.push(s.agg); // rolling window for the "last 15 min" figures
+          if (s.lastMinutes.length > 14) s.lastMinutes.shift();
+        }
         if (!s.agg || s.agg.start !== minute) s.agg = newMinute(minute, m.nodes);
         const ncDelta = prevReject === undefined ? 0 : Math.max(0, s.tags.rejectCount - prevReject);
         addReading(s.agg, m, s.readings, dt, br, ncDelta);
@@ -142,6 +146,7 @@ export function startLive(db) {
       const s = state.get(m.id);
       const hours = [...(s?.rec.hours.values() ?? [])].filter((b) => b.start >= shift.start);
       const sum = excludePlanned(hours, s?.recent ?? [], now).reduce(add, ZERO);
+      const plan = schedulePlan(shift, now, settings.breaks, sum.plannedStopSec, m.idealCycleTime);
       return {
         id: m.id,
         code: m.code,
@@ -165,12 +170,14 @@ export function startLive(db) {
         idealCycleTime: m.idealCycleTime,
         sim: m.source === 'dummy' ? s?.gen.mode ?? 'normal' : null,
         simLevels: m.source === 'dummy' && s ? simLevels(s.gen) : null, // per OEE factor: worse / normal / better
+        last15: s?.agg ? windowOee([...s.lastMinutes, s.agg], m.idealCycleTime) : null, // A/P/Q/OEE over the last 15 min
         pending: s?.pending.length ?? 0,
         pendingSince: s?.pending.length ? Math.min(...s.pending.map((e) => e.start)) : null,
         // the stop happening now, while it still waits for a reason
         openStop: (({ id, start, alarmCode } = {}) => (id ? { id, start, alarmCode } : null))(s?.pending.find((e) => e.end == null)),
         targets: m.targets ?? DEFAULT_TARGETS,
-        plan: schedulePlan(shift, now, settings.breaks, sum.plannedStopSec, m.idealCycleTime), // schedule target qty
+        plan, // schedule plan qty (by now / whole shift)
+        forecast: shiftForecast({ good: sum.total - sum.ng, plannedSec: sum.plannedSec, plan, idealCycleTime: m.idealCycleTime, oeeTarget: (m.targets ?? DEFAULT_TARGETS).oee.target }),
         ...sum,
         ...oee(sum),
       };

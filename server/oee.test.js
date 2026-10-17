@@ -232,16 +232,32 @@ test('per-minute telemetry row for BigQuery', async () => {
 });
 
 test('soul: target risk, hourly surprise and sensor anomalies', async () => {
-  const { targetRisk, surpriseCheck, anomalies, anomalyText } = await import('./soulRules.js');
+  const { targetRisk, riskText, riskChanged, surpriseCheck, surpriseText, hourCauses, anomalies, anomalyText } = await import('./soulRules.js');
   const { pressDefaults, sensorsFor } = await import('./sensors.js');
+  const { shiftForecast } = await import('./oee.js');
   // 4 h in, 1,500 good of a 4,800 shift plan (85 % target = 4,080): at this pace ~3,000 by shift end.
-  const row = { total: 1550, ng: 50, plannedSec: 4 * 3600, idealCycleTime: 6, plan: { toNow: 2400, shift: 4800 }, targets: { oee: { target: 85 } } };
-  const r = targetRisk(row);
+  const shift = (good, plannedSec = 4 * 3600) => ({ plannedSec, idealCycleTime: 6, forecast: shiftForecast({ good, plannedSec, plan: { toNow: 2400, shift: 4800 }, idealCycleTime: 6, oeeTarget: 85 }) });
+  const r = targetRisk(shift(1500));
   assert.equal(r.atRisk, true);
   assert.equal(r.target, 4080);
   assert.equal(r.projected, 3000);
-  assert.equal(targetRisk({ ...row, total: 3050 }).atRisk, false); // 3,000 good: on pace for 6,000
-  assert.equal(targetRisk({ ...row, plannedSec: 600 }), null); // too early in the shift to judge
+  // even at the ideal 6 s with no more stops: 1,500 + 14,400 s / 6 = 3,900 < 4,080, so say so plainly
+  assert.equal(r.best, 3900);
+  assert.equal(r.reachable, false);
+  assert.match(riskText(r, 6), /can't be reached .* about 3,900/);
+  assert.doesNotMatch(riskText(r, 6), /every \d/); // no impossible pace asked for
+  const ok = targetRisk(shift(2000)); // 2,000 + 2,400 = 4,400 possible: reachable, so the needed pace is fine
+  assert.equal(ok.reachable, true);
+  assert.ok(ok.neededPaceSec >= 6);
+  assert.equal(targetRisk(shift(3000)).atRisk, false); // on pace for 6,000
+  assert.equal(targetRisk(shift(1500, 600)), null); // too early in the shift to judge
+  assert.equal(riskChanged(r, { reachable: false, short: r.short + 50 }), false); // same story: stay quiet
+  assert.equal(riskChanged(r, { reachable: true, short: r.short }), true);
+  // the hour's stops are proposed as the cause
+  const at0 = at(5);
+  const causes = hourCauses([{ start: at0 + 60e3, end: at0 + 300e3, reason: 'Material jam in feeder' }, { start: at0 + 600e3, end: at0 + 900e3, reason: 'Material jam in feeder' }, { start: at0 + 1200e3, end: at0 + 1740e3, reason: 'Coil shortage' }], at0);
+  assert.deepEqual(causes.map((c) => [c.reason, c.count, c.minutes]), [['Material jam in feeder', 2, 9], ['Coil shortage', 1, 9]]);
+  assert.match(surpriseText(at0, { expected: 400, actual: 310 }, causes), /I made 310 .* 2 × Material jam in feeder \(9 min\) and Coil shortage \(9 min\)\. Was that it\?/);
 
   const prev = [{ plannedSec: 3600, total: 500, ng: 0 }, { plannedSec: 3600, total: 520, ng: 20 }];
   assert.equal(surpriseCheck({ plannedSec: 3600, total: 310, ng: 0 }, prev).surprise, true); // expected 500, got 310
@@ -277,4 +293,21 @@ test('cycle time learner: fastest stable 10 %, suggest when > 5 % off', async ()
   assert.equal(suggestCycle({ idealCycleTime: 6, cycleSuggestion: { status: 'pending' } }, best, 0), null);
   assert.equal(suggestCycle({ idealCycleTime: 6, cycleSuggestion: { status: 'rejected', at: 0 } }, best, 86400e3), null); // rejected yesterday
   assert.ok(suggestCycle({ idealCycleTime: 6, cycleSuggestion: { status: 'rejected', at: 0 } }, best, 8 * 86400e3)); // a week later: again
+});
+
+test('last-15-min OEE and the sensor that found a stop', async () => {
+  const { windowOee } = await import('./telemetry.js');
+  const { stopSensor, pressDefaults } = await import('./sensors.js');
+  const min = (runSec, parts, nc = 0, breakSec = 0) => ({ runSec, parts, nc, breakSec, secs: 60 });
+  const w = windowOee([min(60, 10), min(30, 5, 1)], 6); // 90 s run of 120 s, 15 parts × 6 s = 90 s, 1 NC
+  assert.equal(w.availability, 0.75);
+  assert.equal(w.performance, 1);
+  assert.equal(Math.round(w.quality * 100), 93);
+  assert.equal(windowOee([min(0, 0, 0, 60)], 6), null); // a break: nothing to judge
+  const premium = pressDefaults({ setup: 'premium', frameType: 'straight-side', ratedTonnage: 400, nodes: 4 });
+  const essential = pressDefaults({ setup: 'essential' });
+  assert.equal(stopSensor(premium, 101).id, 'acoustic'); // jam: the stick score saw it coming
+  assert.equal(stopSensor(essential, 101).id, 'laserEye'); // no microphone: parts stopped coming
+  assert.equal(stopSensor(premium, 0, [{ tonnage: [100, 100, 100, 112] }]).id, 'tonnage4'); // no alarm: the sensor out of limits
+  assert.equal(stopSensor(premium, 0, [{ tonnage: [100, 100, 100, 100] }]).id, 'motorCurrent');
 });
