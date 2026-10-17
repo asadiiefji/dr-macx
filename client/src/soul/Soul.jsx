@@ -362,7 +362,8 @@ function Main({ session, onChange, onExit }) {
   const attention = events.filter((e) => e.stop || e.needsAnswer);
   const investigate = (said && events.find((e) => e.message?.id === said.id)) ?? attention[0];
   const facts = factsOf([...pendingNow, ...(shiftStops.data?.events ?? [])], row, now);
-  // every section can be shown on its own, large, in the middle (the top bar stays); Esc or the button brings all back
+  // the main sections (not the panels inside the tabs) can be shown on their own, large, in the middle (the top bar
+  // stays); Esc or the button brings all back
   const full = (id) => <FullButton on={max === id} onClick={() => setMax(max === id ? null : id)} />;
 
   const sec = {
@@ -376,15 +377,15 @@ function Main({ session, onChange, onExit }) {
     ),
     oee: <OeePanel action={full('oee')} row={row} ring={max === 'oee' ? 180 : short ? 80 : 92} demo={demo} />,
     status: <MachineStatus action={full('status')} row={row} now={now} />,
-    progress: <Progress action={full('progress')} row={row} live={live} now={now} />,
-    sensors: <KeySensors action={full('sensors')} row={row} sensors={sensors} onPick={showAnatomy} onAll={() => (setMax(null), setTab('sensors'))} />,
+    progress: <Progress row={row} live={live} now={now} />,
+    sensors: <KeySensors row={row} sensors={sensors} onPick={showAnatomy} onAll={() => (setMax(null), setTab('sensors'))} />,
     attention: (
       <Attention
-        action={full('attention')} attention={attention} pendingNow={pendingNow} pendingBefore={pendingBefore} reasons={reasons.rows} machineId={machineId} operator={operator}
+        attention={attention} pendingNow={pendingNow} pendingBefore={pendingBefore} reasons={reasons.rows} machineId={machineId} operator={operator}
         onDone={reload} onEarlier={() => setHistory('earlier')} onAll={() => (setMax(null), setTab('events'))} handlers={handlers}
       />
     ),
-    conversation: <Recent action={full('conversation')} title="Recent conversation" messages={messages.data} events={events} onOpen={handlers.onOpen} onAll={() => setAllSaid(true)} />,
+    conversation: <Recent title="Recent conversation" messages={messages.data} events={events} onOpen={handlers.onOpen} onAll={() => setAllSaid(true)} />,
   };
   sec.tabs = (
     <Card data-tour="kiosk-tabs" sx={{ ...panel, p: 1, display: 'flex', flexDirection: 'column', gap: 1, height: max === 'tabs' ? '100%' : 'auto' }}>
@@ -431,7 +432,7 @@ function Main({ session, onChange, onExit }) {
       )}
     </Card>
   );
-  const tall = ['hero', 'tabs', 'attention', 'conversation'].includes(max); // these fill the height; the others stay their size
+  const tall = ['hero', 'tabs'].includes(max); // these fill the height; the others stay their size
 
   return (
     <Box
