@@ -230,6 +230,36 @@ export async function soulAsk(context, lang, focus) {
   return JSON.parse(res.text);
 }
 
+// A stop just happened: the spoken message plus a short, fixed-format analysis for the event popup
+// (likely issue, why, what to check, suggested downtime reason).
+const STOP_SCHEMA = {
+  type: 'object',
+  properties: {
+    say: { type: 'string', description: 'What I say aloud now: that I stopped, the most probable cause, and to give the stop its reason.' },
+    likelyIssue: { type: 'string', description: 'One short sentence naming the suspected problem.' },
+    why: { type: 'array', items: { type: 'string' }, description: 'The two or three strongest pieces of evidence from my data (sensor values before the stop, alarm, recent stops), each one short sentence with real numbers.' },
+    check: { type: 'array', items: { type: 'string' }, description: 'One to three actionable inspection steps for the operator or maintenance, most useful first.' },
+    reasonCode: { type: 'string', description: 'The downtime reason code from "reasons" that best fits this stop, or empty. The operator verifies it.' },
+    part: { type: 'string', description: 'Anatomy part id most involved: motor, gearbox, lubeLine, loadCell, camera, microphone, ioModule, exitChute, controlPanel, or empty.' },
+    node: { type: 'integer', description: 'Tonnage node number if one node is involved, else 0.' },
+  },
+  required: ['say', 'likelyIssue', 'why', 'check', 'reasonCode'],
+};
+
+export async function soulStop(context, lang) {
+  const res = await track('gemini', () => gemini().models.generateContent({
+    model: MODEL,
+    contents: JSON.stringify(context),
+    config: {
+      systemInstruction: `${soulVoice(lang)}\nI have just stopped ("justStopped"). Say that I stopped and the most probable cause, using what my sensors read before the stop and my recent stops; ask the operator to give the stop its reason. Keep likelyIssue to one sentence, why to 2-3 items and check to 1-3 items.`,
+      responseMimeType: 'application/json',
+      responseJsonSchema: STOP_SCHEMA,
+      temperature: 0.3,
+    },
+  }));
+  return JSON.parse(res.text);
+}
+
 const EXPLAIN_SCHEMA = {
   type: 'object',
   properties: {

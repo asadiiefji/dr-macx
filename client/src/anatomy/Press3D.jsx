@@ -2,7 +2,7 @@
 // sensor parts carry a blue marker, the slide strokes while the press runs.
 import { useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { Line, OrbitControls } from '@react-three/drei';
+import { Bounds, Line, OrbitControls } from '@react-three/drei';
 import { TONES } from './pressParts.js';
 
 const ACCENT = '#F97316'; // the part you hover or select
@@ -49,7 +49,9 @@ export default function Press3D({ parts, litId, faultId, running, reduced, onHov
       <color attach="background" args={['#FBFDFF']} />
       <ambientLight intensity={0.7} />
       <directionalLight position={[6, 10, 6]} intensity={1.3} />
-      <OrbitControls target={[0, 2.2, 0]} maxPolarAngle={Math.PI / 2.05} minDistance={4} maxDistance={20} enableDamping={!reduced} />
+      <OrbitControls makeDefault target={[0, 2.2, 0]} maxPolarAngle={Math.PI / 2.05} minDistance={4} maxDistance={20} enableDamping={!reduced} />
+      {/* the camera fits the whole machine into the box (any width or height), and again when the box resizes */}
+      <Bounds fit clip observe margin={1.15}>
       {parts.map((p) => <Part key={p.id} p={p} lit={p.id === litId} fault={p.id === faultId} running={running} reduced={reduced} onHover={onHover} onPick={onPick} />)}
       {/* a marker on every sensor part, inside a wide invisible ball so it is easy to point at */}
       {parts.filter((p) => p.part).map((p) => (
@@ -63,6 +65,7 @@ export default function Press3D({ parts, litId, faultId, running, reduced, onHov
           <mesh><sphereGeometry args={[0.3, 12, 8]} /><meshBasicMaterial transparent opacity={0} depthWrite={false} /></mesh>
         </group>
       ))}
+      </Bounds>
     </Canvas>
   );
 }

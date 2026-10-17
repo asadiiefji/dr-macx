@@ -1,7 +1,7 @@
 // The Machine Soul speaks on its own: every 10 s it looks at each press and says something on events
 // (sensor out of limits, shift target at risk, unplanned stop, an hour that fell short). Stored in English;
 // the kiosk gets each message translated into its language.
-import { soulAsk } from './ai.js';
+import { soulAsk, soulStop } from './ai.js';
 import { currentShift, hourStart } from './oee.js';
 import { pressDefaults, stopSensor } from './sensors.js';
 import { targetRisk, riskText, riskChanged, surpriseCheck, surpriseText, hourCauses, ANSWERS, anomalies, anomalyText, stopFallback, ANOMALY } from './soulRules.js';
@@ -27,13 +27,11 @@ export function startBrain({ db, live, say, context, resolve }) {
     let extra = {};
     try {
       const ctx = await context(row.id);
-      const out = await soulAsk(
-        { ...ctx, justStopped: { at: new Date(stop.start).toISOString(), alarmCode: stop.alarmCode, alarmMeans: event?.reason, sensorsBeforeStop: before } },
-        'en',
-        'I have just stopped ("justStopped"). Say that I stopped and the most probable cause, using what my sensors read before the stop and my recent stops; ask the operator to give the stop its reason.',
-      );
+      const out = await soulStop({ ...ctx, justStopped: { at: new Date(stop.start).toISOString(), alarmCode: stop.alarmCode, alarmMeans: event?.reason, sensorsBeforeStop: before } }, 'en');
       text = out.say;
-      extra = { findings: out.findings, actions: out.actions, aiPart: out.part || null };
+      // likely issue / why / what to check, stored in the fields every popup already reads; the reason is only a suggestion
+      const reason = ctx.reasons.find((r) => r.code === out.reasonCode);
+      extra = { likelyCause: out.likelyIssue, findings: out.why?.slice(0, 3), actions: out.check?.slice(0, 3), reasonCode: reason?.code ?? null, aiPart: out.part || null };
     } catch (e) {
       log('stop analysis')(e);
     }
