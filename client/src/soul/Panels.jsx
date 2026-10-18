@@ -1,7 +1,7 @@
 // Machine Soul right-hand panels: events (what the press said + stops waiting for a reason), the sensor log and the
 // anatomy of the problem part. Each event names its sensor and part; clicking one opens it full screen.
 import { useEffect, useState } from 'react';
-import { Avatar, Box, Button, Chip, CircularProgress, Dialog, DialogContent, IconButton, LinearProgress, MenuItem, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
+import { Avatar, Box, Button, Chip, CircularProgress, Dialog, DialogContent, IconButton, LinearProgress, MenuItem, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import WarningIcon from '@mui/icons-material/WarningAmberRounded';
 import ErrorIcon from '@mui/icons-material/ReportRounded';
 import InfoIcon from '@mui/icons-material/InfoOutlined';
@@ -11,17 +11,6 @@ import CloseIcon from '@mui/icons-material/Close';
 import ArrowIcon from '@mui/icons-material/ArrowForwardRounded';
 import ReplayIcon from '@mui/icons-material/ReplayOutlined';
 import MicIcon from '@mui/icons-material/GraphicEqRounded';
-import TonnageIcon from '@mui/icons-material/BarChartRounded';
-import BoltIcon from '@mui/icons-material/BoltRounded';
-import TempIcon from '@mui/icons-material/ThermostatRounded';
-import VibIcon from '@mui/icons-material/VibrationRounded';
-import CountIcon from '@mui/icons-material/Inventory2Outlined';
-import AlarmIcon from '@mui/icons-material/NotificationsActiveOutlined';
-import HelpIcon from '@mui/icons-material/InfoOutlined';
-import IssueIcon from '@mui/icons-material/ReportProblemOutlined';
-import WhyIcon from '@mui/icons-material/InsightsRounded';
-import CheckListIcon from '@mui/icons-material/FactCheckOutlined';
-import ReasonIcon from '@mui/icons-material/LabelOutlined';
 import { C } from '../theme.js';
 import { duration, num } from '../ui.jsx';
 import { api, useGet } from '../api.js';
@@ -288,8 +277,8 @@ export function EventDetail({ e, row, sensors, reasons, operator, lang, onClose,
       title={<Stack direction="row" alignItems="center" gap={1.5}><Avatar sx={{ bgcolor: s.bg, color: s.color, width: 32, height: 32 }}><s.Icon fontSize="small" /></Avatar>{tx(t, e.title)}</Stack>}
       actions={e.message && <Button size="small" startIcon={<ReplayIcon />} onClick={() => onReplay(e.message)}>{t('Say it again')}</Button>}
     >
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: side ? '1fr 1fr' : '1fr' }, gap: 3 }}>
-        <Stack spacing={2}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0,1fr)', lg: side ? 'minmax(0,1fr) minmax(0,1fr)' : 'minmax(0,1fr)' }, gap: 3 }}>
+        <Stack spacing={2} minWidth={0}>
           <Typography color="text.secondary">{new Date(e.at).toLocaleString(locale)} · {t(s.label)}</Typography>
           <Typography fontSize={17} lineHeight={1.5}>{tx(t, e.text)}</Typography>
           <Stack direction="row" gap={0.75} flexWrap="wrap">{e.tags.map((tag, i) => <Tag key={i} tag={tag} />)}</Stack>
@@ -321,179 +310,6 @@ export function EventDetail({ e, row, sensors, reasons, operator, lang, onClose,
             lit={e.part ? { part: e.part, node: e.node ?? null } : undefined}
             fault={e.part && (e.stop || ['stopDone', 'anomaly', 'advice'].includes(e.kind)) ? { part: e.part, node: e.node ?? null } : undefined}
           />
-        )}
-      </Box>
-    </Popup>
-  );
-}
-
-// --- The event popup of the redesigned kiosk (/soul2): analysis in four parts, machine overview, sensor snapshot ---
-
-// OK / Warning / Alarm of one reading against its limits (tonnage nodes: nominal ± tolerance), as the server judges.
-const readingState = (s, v, row) => {
-  if (v == null) return null;
-  if (s.node) {
-    if (!v) return null;
-    const nominal = row.ratedTonnage / row.nodes;
-    const dev = Math.abs(v - nominal) / nominal;
-    return dev > (row.nodeTolerancePct / 100) * 1.5 ? 'alarm' : dev > row.nodeTolerancePct / 100 ? 'warn' : 'ok';
-  }
-  return s.warn == null ? null : v >= s.alarm ? 'alarm' : v >= s.warn ? 'warn' : 'ok';
-};
-const STATE = { ok: [SEV.ok, 'Normal'], warn: [SEV.warn, 'Warning'], alarm: [SEV.error, 'Alarm'] };
-const worse = (a, b) => (['alarm', 'warn', 'ok'].find((x) => x === a || x === b) ?? null);
-
-// What the sensors read 5 s before the stop, as a few tiles; the full 60 / 30 / 5 s table on request.
-function SensorSnapshot({ snap, sensors, row }) {
-  const t = useT();
-  const [all, setAll] = useState(false);
-  const r = snap?.['5sBefore'];
-  if (!r) return null;
-  const by = (id) => sensors.find((s) => s.id === id);
-  const nodes = sensors.filter((s) => s.node).map((s) => ({ s, v: valueOf(r, s) })).filter((x) => x.v != null);
-  const one = (id, Icon, label) => {
-    const s = by(id);
-    const v = s && valueOf(r, s);
-    if (v == null) return null;
-    return { Icon, label, value: id === 'alarm' ? (v ? `${t('Alarm')} ${v}` : t('No alarm')) : `${num(v)} ${s.unit}`.trim(), state: id === 'alarm' ? (v ? 'alarm' : 'ok') : readingState(s, v, row) };
-  };
-  const tiles = [
-    nodes.length && {
-      Icon: TonnageIcon, label: 'Tonnage nodes',
-      value: `${num(Math.min(...nodes.map((x) => x.v)))} – ${num(Math.max(...nodes.map((x) => x.v)))} t`,
-      state: nodes.reduce((acc, x) => worse(acc, readingState(x.s, x.v, row)), null),
-    },
-    one('motorCurrent', BoltIcon, 'Motor current'),
-    one('tempMotor', TempIcon, 'Motor temp'),
-    one('vibMotor', VibIcon, 'Motor vibration'),
-    one('laserEye', CountIcon, 'Part count'),
-    one('alarm', AlarmIcon, 'PLC alarm'),
-  ].filter(Boolean).slice(0, 4);
-  return (
-    <Box sx={{ border: `1px solid ${C.line}`, borderRadius: '12px', p: 2, bgcolor: '#FFFFFF' }}>
-      <Stack direction="row" alignItems="center" gap={1} mb={1.5}>
-        <Typography fontWeight={800} fontSize={17}>{t('Sensor snapshot before stop')}</Typography>
-        <Tooltip title={t('What the sensors read 5 seconds before the machine stopped.')}><HelpIcon sx={{ fontSize: 18, color: 'text.secondary' }} /></Tooltip>
-        <Typography color="text.secondary" fontSize={13}>({t('5 seconds before')})</Typography>
-      </Stack>
-      <Box sx={{ display: 'grid', gap: 1, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0,1fr))' } }}>
-        {tiles.map(({ Icon, label, value, state }) => {
-          const [sev, word] = STATE[state] ?? [];
-          return (
-            <Stack key={label} direction="row" alignItems="center" gap={1.25} sx={{ p: 1.25, border: `1px solid ${C.line}`, borderRadius: '10px', minWidth: 0 }}>
-              <Box sx={{ width: 38, height: 38, borderRadius: '50%', bgcolor: C.light, display: 'grid', placeItems: 'center', flex: 'none' }}><Icon sx={{ color: C.blue, fontSize: 20 }} /></Box>
-              <Box flex={1} minWidth={0}>
-                <Typography fontSize={13} color="text.secondary" noWrap>{t(label)}</Typography>
-                <Typography fontWeight={700} fontSize={15} noWrap>{value}</Typography>
-              </Box>
-              {sev && <Chip size="small" label={t(word)} sx={{ bgcolor: sev.bg, color: sev.text, fontWeight: 700, flex: 'none' }} />}
-            </Stack>
-          );
-        })}
-      </Box>
-      <Button fullWidth variant="outlined" startIcon={<TonnageIcon />} endIcon={<ArrowIcon sx={{ transform: all ? 'rotate(-90deg)' : 'none' }} />} onClick={() => setAll(!all)} sx={{ mt: 1.5, minHeight: 42, borderRadius: '10px', fontWeight: 700 }}>
-        {t(all ? 'Hide the full sensor data' : 'View all sensor data and trends')}
-      </Button>
-      {all && <Box mt={1.5}><BeforeStop snap={snap} sensors={sensors} /></Box>}
-    </Box>
-  );
-}
-
-// The analysis in four fixed parts: likely issue, why (evidence), what to check, and the suggested downtime reason.
-function Analysis({ d, e, reasons }) {
-  const t = useT();
-  const why = d.findings ?? [];
-  const check = d.actions ?? [];
-  const suggested = e.stop && (reasons.find((r) => r.code === d.reasonCode) ?? reasons.find((r) => r.code === e.stop.code));
-  if (!d.likelyCause && !why.length && !check.length && !e.stop) return null;
-  const head = (Icon, label) => (
-    <Stack direction="row" alignItems="center" gap={0.75} mb={0.5}>
-      <Icon sx={{ fontSize: 17, color: C.blue }} />
-      <Typography sx={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.08em', color: C.blueDark }}>{t(label).toUpperCase()}</Typography>
-    </Stack>
-  );
-  return (
-    <Stack spacing={1.75} sx={{ border: `1px solid ${C.line}`, borderRadius: '12px', p: 2, bgcolor: '#FFFFFF' }}>
-      {d.likelyCause && (
-        <Box>
-          {head(IssueIcon, 'Likely issue')}
-          <Typography fontWeight={700} fontSize={16}>{t(d.likelyCause)}</Typography>
-        </Box>
-      )}
-      {why.length > 0 && (
-        <Box>
-          {head(WhyIcon, 'Why')}
-          <Box component="ul" sx={{ m: 0, pl: 2.5 }}>{why.map((x, i) => <Typography key={i} component="li" mb={0.25}>{typeof x === 'string' ? t(x) : <><b>{t(x.part)}:</b> {t(x.finding)}</>}</Typography>)}</Box>
-        </Box>
-      )}
-      {check.length > 0 && (
-        <Box>
-          {head(CheckListIcon, 'What to check')}
-          <Box component="ol" sx={{ m: 0, pl: 2.5 }}>{check.map((x, i) => <Typography key={i} component="li" mb={0.25}>{t(x)}</Typography>)}</Box>
-        </Box>
-      )}
-      {e.stop && (
-        <Box>
-          {head(ReasonIcon, 'Downtime reason')}
-          {suggested ? (
-            <Typography><b>{t(suggested.category)}</b> · {t(suggested.name)} <Typography component="span" color="text.secondary" fontSize={13}>({suggested.code})</Typography></Typography>
-          ) : (
-            <Typography color="text.secondary">{t('No suggestion yet.')}</Typography>
-          )}
-          <Typography variant="caption" color="text.secondary">{t('Suggested only: the operator must verify it below.')}</Typography>
-        </Box>
-      )}
-    </Stack>
-  );
-}
-
-const FRAME_NAME = { 'straight-side': 'Straight-side', 'c-frame': 'C-frame' };
-
-export function EventDetail2({ e, row, sensors, reasons, operator, lang, onClose, onSaved, onReplay, onAnswer }) {
-  const t = useT();
-  const locale = useLang() === 'en' ? undefined : BCP[lang];
-  if (!e) return null;
-  const s = SEV[e.sev];
-  const d = e.message?.data ?? {};
-  const side = e.part || e.stop || e.kind === 'advice'; // anything with a cause on the machine shows its overview
-  const fault = e.part ? { part: e.part, node: e.node ?? null } : undefined;
-  return (
-    <Popup
-      open
-      size={side ? 'wide' : 'half'}
-      onClose={onClose}
-      title={<Stack direction="row" alignItems="center" gap={1.5}><Avatar sx={{ bgcolor: s.bg, color: s.color, width: 32, height: 32 }}><s.Icon fontSize="small" /></Avatar>{tx(t, e.title)}</Stack>}
-      actions={e.message && <Button size="small" startIcon={<ReplayIcon />} onClick={() => onReplay(e.message)}>{t('Say it again')}</Button>}
-    >
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: side ? 'minmax(0,1.1fr) minmax(0,1fr)' : '1fr' }, gap: 3, alignItems: 'start' }}>
-        <Stack spacing={2} minWidth={0}>
-          <Typography color="text.secondary">{new Date(e.at).toLocaleString(locale)} · {t(s.label)}</Typography>
-          <Typography fontSize={17} lineHeight={1.5}>{tx(t, e.text)}</Typography>
-          <Stack direction="row" gap={0.75} flexWrap="wrap">{e.tags.map((tag, i) => <Tag key={i} tag={tag} />)}</Stack>
-          <Analysis d={d} e={e} reasons={reasons} />
-          {e.kind === 'question' && d.hour && <HourView machineId={row.id} hour={d.hour} lang={lang} idealCycleTime={row.idealCycleTime} expected={d.expected} />}
-          {e.kind === 'cycle' && <Typography>{t('Ideal cycle time')} {d.from} s → {t('best steady stroke')} {d.to} s ({d.samples}). {t('A supervisor approves it on the Machines page.')}</Typography>}
-          {e.needsAnswer && (
-            <Stack direction="row" gap={1} flexWrap="wrap">
-              {(d.answers ?? []).map((a) => (
-                <Button key={a} variant="outlined" onClick={() => onAnswer(e.message, a)} sx={{ borderColor: SEV.ask.line, color: SEV.ask.text, borderRadius: '8px' }}>{t(a)}</Button>
-              ))}
-              <Button variant="contained" startIcon={<MicIcon />} onClick={() => onAnswer(e.message)} sx={{ bgcolor: SEV.ask.color, '&:hover': { bgcolor: SEV.ask.text }, borderRadius: '8px' }}>{t('Answer by voice or text')}</Button>
-            </Stack>
-          )}
-          {e.stop && (
-            <Framed>
-              <Typography fontWeight={700} component="h3">{t('Give this stop its reason')}</Typography>
-              <Typography variant="body2" color="text.secondary" mb={1}>{t('Let Gemini suggest one from your spoken note, or pick it yourself.')}</Typography>
-              <StopForm machineId={row.id} event={e.stop} reasons={reasons} onSaved={() => (onSaved(), onClose())} operatorId={operator.id} lang={BCP[lang]} />
-            </Framed>
-          )}
-        </Stack>
-        {side && (
-          <Stack spacing={2} minWidth={0}>
-            <Anatomy m={row} overview title={t('Machine overview')} height={360} lit={fault} fault={fault && (e.stop || ['stopDone', 'anomaly', 'advice'].includes(e.kind)) ? fault : undefined} />
-            <SensorSnapshot snap={d.sensorsBeforeStop} sensors={sensors} row={row} />
-          </Stack>
         )}
       </Box>
     </Popup>
@@ -746,18 +562,18 @@ export function HourView({ machineId, hour, lang, idealCycleTime, expected }) {
           <Stack key={k} direction="row" alignItems="center" gap={0.5}><Box sx={{ width: 10, height: 10, borderRadius: '2px', bgcolor: v.color }} /><Typography variant="caption">{t(v.label)}</Typography></Stack>
         ))}
       </Stack>
-      <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
-        <Box>
+      <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: 'minmax(0,1fr)', md: 'minmax(0,1fr) minmax(0,1.4fr)' } }}>
+        <Box minWidth={0}>
           <Typography variant="caption" fontWeight={700} color="text.secondary">{t('Stops')}</Typography>
           {(stops.data?.events ?? []).length === 0 && <Typography variant="body2" color="text.secondary">{t('No stops logged.')}</Typography>}
           {(stops.data?.events ?? []).map((x) => (
             <Typography key={x.id} variant="body2">{hhmm(x.start)} · {t(x.reason)} · {duration((Math.min(x.end ?? end, end) - Math.max(x.start, hour)))}</Typography>
           ))}
         </Box>
-        <Box>
+        <Box minWidth={0}>
           <Typography variant="caption" fontWeight={700} color="text.secondary">{t('Sensor spikes')}</Typography>
           {spikes.length === 0 && <Typography variant="body2" color="text.secondary">{t('No sensor out of limits.')}</Typography>}
-          {spikes.map((m) => <Typography key={m.id} variant="body2" noWrap title={m.text}>{hhmm(m.at)} · {m.text}</Typography>)}
+          {spikes.map((m) => <Typography key={m.id} variant="body2" sx={{ overflowWrap: 'anywhere' }}>{hhmm(m.at)} · {m.text}</Typography>)}
         </Box>
       </Box>
     </Box>

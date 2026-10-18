@@ -16,8 +16,6 @@ import MachineDetail from './pages/MachineDetail.jsx';
 import { Operators } from './pages/People.jsx';
 
 // Dr. Macx Live, the kiosk next to each machine (3D character), runs full screen, outside the side menu.
-// /soul is the current kiosk; /soul2 is the redesign being tried (not in the menu yet).
-const SoulClassic = lazy(() => import('./soul/SoulClassic.jsx'));
 const Soul = lazy(() => import('./soul/Soul.jsx'));
 
 createRoot(document.getElementById('root')).render(
@@ -26,8 +24,7 @@ createRoot(document.getElementById('root')).render(
       <CssBaseline />
       <BrowserRouter>
         <Routes>
-          <Route path="soul" element={<Suspense fallback={<LinearProgress />}><SoulClassic /></Suspense>} />
-          <Route path="soul2" element={<Suspense fallback={<LinearProgress />}><Soul /></Suspense>} />
+          <Route path="soul" element={<Suspense fallback={<LinearProgress />}><Soul /></Suspense>} />
           <Route element={<Layout />}>
             <Route index element={<Dashboard />} />
             <Route path="monitoring" element={<Monitoring />} />

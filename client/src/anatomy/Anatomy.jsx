@@ -5,7 +5,6 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { Box, Button, Card, Chip, LinearProgress, ListItemText, Menu, MenuItem, Stack, ToggleButton, ToggleButtonGroup, Typography, useMediaQuery } from '@mui/material';
 import ListIcon from '@mui/icons-material/SensorsRounded';
-import AlertIcon from '@mui/icons-material/ErrorRounded';
 import { C, LEVELS } from '../theme.js';
 import { num } from '../ui.jsx';
 import { useT } from '../i18n.jsx';
@@ -53,16 +52,16 @@ const ring = (axis, c, r, at) =>
     return axis === 'x' ? [at, c[1] + r * Math.cos(a), c[2] + r * Math.sin(a)] : [c[0] + r * Math.cos(a), at, c[2] + r * Math.sin(a)];
   });
 
-// Draw one part (dy = vertical offset for moving parts).
-function Shape({ p, color, dy }) {
-  const t = tones(color ?? TONES[p.tone]);
-  const sw = 1.2;
+// Draw one part (dy = vertical offset for moving parts). outline = only its edges, dashed (an x-ray of a hidden part).
+function Shape({ p, color, dy, outline }) {
+  const t = outline ? { top: 'none', front: 'none', right: 'none', edge: color } : tones(color ?? TONES[p.tone]);
+  const sw = outline ? 1.6 : 1.2;
   if (p.kind === 'box') {
     const [x0, y, z0] = p.pos;
     const [w, h, d] = p.size;
     const [x1, y0, y1, z1] = [x0 + w, y + dy, y + h + dy, z0 + d];
     return (
-      <g stroke={t.edge} strokeWidth={sw} strokeLinejoin="round">
+      <g stroke={t.edge} strokeWidth={sw} strokeLinejoin="round" strokeDasharray={outline ? '5 4' : undefined}>
         <polygon points={pts([[x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]])} fill={t.top} />
         <polygon points={pts([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]])} fill={t.front} />
         <polygon points={pts([[x1, y0, z0], [x1, y0, z1], [x1, y1, z1], [x1, y1, z0]])} fill={t.right} />
@@ -77,7 +76,7 @@ function Shape({ p, color, dy }) {
     const a = ring(axis, c, p.r, lo).map(iso);
     const capPts = ring(axis, c, p.r, hi);
     return (
-      <g stroke={t.edge} strokeWidth={sw} strokeLinejoin="round">
+      <g stroke={t.edge} strokeWidth={sw} strokeLinejoin="round" strokeDasharray={outline ? '5 4' : undefined}>
         <polygon points={hull([...a, ...capPts.map(iso)]).map((q) => q.map((v) => v.toFixed(1)).join(',')).join(' ')} fill={axis === 'x' ? t.front : t.right} />
         <polygon points={pts(capPts)} fill={axis === 'x' ? t.right : t.top} />
       </g>
@@ -137,15 +136,16 @@ function Drawing({ parts, litPart, faultPart, running, reduced, onFocus, onPick 
           </g>
         );
       })}
-      {/* the problem part and the selected part again on top, x-ray style, so a part at the back is never hidden */}
+      {/* the problem part and the selected part are coloured in place; their outline is drawn again on top, dashed,
+          so the part of them the frame hides still shows where they are without changing their shape */}
       {faultPart && (
-        <g opacity={0.92} pointerEvents="none" style={{ filter: 'drop-shadow(0 0 6px rgba(220,38,38,0.8))' }}>
-          <Shape p={faultPart} color={FAULT} dy={faultPart.moves ? dy : 0} />
+        <g pointerEvents="none">
+          <Shape p={faultPart} color={FAULT} dy={faultPart.moves ? dy : 0} outline />
         </g>
       )}
       {litPart && litPart.id !== faultPart?.id && (
-        <g opacity={0.92} pointerEvents="none" style={{ filter: 'drop-shadow(0 0 6px rgba(249,115,22,0.8))' }}>
-          <Shape p={litPart} color={ACCENT} dy={litPart.moves ? dy : 0} />
+        <g pointerEvents="none">
+          <Shape p={litPart} color={ACCENT} dy={litPart.moves ? dy : 0} outline />
         </g>
       )}
       {/* a dot on every part that carries a sensor, with a wide invisible ring so it is easy to hover, click or Tab to */}
@@ -175,9 +175,7 @@ const colorOf = (p, litPart, faultPart) => (p.id === faultPart?.id ? FAULT : p.i
 
 // lit = a part to point at (e.g. "View part"); fault = the sensor that raised the problem (red, stays while you
 // hover other parts; defaults to a sensor in alarm). height = the drawing's height: the text below adds to it.
-// overview = the event popup's look: no figure number, no sensor list or readout; a callout names the suspected area
-// and the colour key sits beside the drawing.
-export default function Anatomy({ m, lit, fault, title = 'Machine anatomy', number = 1, height = 320, overview }) {
+export default function Anatomy({ m, lit, fault, title = 'Machine anatomy', number = 1, height = 320 }) {
   const t = useT();
   const catalog = useSensorCatalog();
   const reduced = useMediaQuery('(prefers-reduced-motion: reduce)');
@@ -215,8 +213,8 @@ export default function Anatomy({ m, lit, fault, title = 'Machine anatomy', numb
     <Card sx={{ p: 0, overflow: 'hidden', bgcolor: '#FBFDFF', display: 'flex', flexDirection: 'column', borderRadius: '12px', flex: 'none' }} onMouseLeave={() => setHover(null)}>
       <Stack direction="row" alignItems="flex-start" gap={1} sx={{ px: 1.75, pt: 1.25, pb: 0.5 }}>
         <Box flex={1} minWidth={0}>
-          {!overview && <Typography variant="overline" component="div" lineHeight={1.2}>FIG. {number}</Typography>}
-          <Typography fontWeight={800} noWrap fontSize={overview ? 17 : undefined}>{title}</Typography>
+          <Typography variant="overline" component="div" lineHeight={1.2}>FIG. {number}</Typography>
+          <Typography fontWeight={800} noWrap>{title}</Typography>
           <Typography variant="caption" color="text.secondary" noWrap component="div">{m.ratedTonnage} t {t(FRAME[m.frameType] ?? m.frameType)} · {t(m.setup === 'premium' ? 'Premium sensors' : 'Essential sensors')}</Typography>
         </Box>
         <Stack alignItems="flex-end" gap={0.75} flex="none">
@@ -224,11 +222,9 @@ export default function Anatomy({ m, lit, fault, title = 'Machine anatomy', numb
             <ToggleButton value="drawing">{t('Drawing')}</ToggleButton>
             <ToggleButton value="3d">3D</ToggleButton>
           </ToggleButtonGroup>
-          {!overview && (
-            <Button size="small" variant="outlined" startIcon={<ListIcon />} onClick={(e) => setMenu(e.currentTarget)} aria-haspopup="menu" sx={{ minHeight: 28, py: 0, bgcolor: '#fff', borderRadius: '8px' }}>
-              {t('Sensors')} ({sensorParts.length})
-            </Button>
-          )}
+          <Button size="small" variant="outlined" startIcon={<ListIcon />} onClick={(e) => setMenu(e.currentTarget)} aria-haspopup="menu" sx={{ minHeight: 28, py: 0, bgcolor: '#fff', borderRadius: '8px' }}>
+            {t('Sensors')} ({sensorParts.length})
+          </Button>
         </Stack>
       </Stack>
       <Menu anchorEl={menu} open={!!menu} onClose={() => setMenu(null)} slotProps={{ paper: { sx: { maxHeight: 360 } } }}>
@@ -252,29 +248,10 @@ export default function Anatomy({ m, lit, fault, title = 'Machine anatomy', numb
               <Press3D parts={parts} litId={litPart?.id} faultId={faultPart?.id} running={m.status === 'running'} reduced={reduced} onHover={setHover} onPick={setPicked} />
             </Suspense>
           )}
-          {overview && faultPart && (
-            <Stack direction="row" gap={1} alignItems="center" sx={{ position: 'absolute', top: 8, right: 8, px: 1.25, py: 0.75, bgcolor: '#FFFFFF', border: `1.5px solid ${FAULT}`, borderRadius: '8px', boxShadow: '0 4px 12px rgba(15,23,42,0.12)', maxWidth: '60%', pointerEvents: 'none' }}>
-              <AlertIcon sx={{ color: FAULT, fontSize: 22, flex: 'none' }} />
-              <Box minWidth={0}>
-                <Typography fontWeight={700} fontSize={13} sx={{ color: FAULT }} noWrap>{t('Suspected area')}</Typography>
-                <Typography fontSize={13} noWrap>{t(faultPart.name)}</Typography>
-              </Box>
-            </Stack>
-          )}
         </Box>
-        {overview && (
-          <Stack justifyContent="center" gap={1.25} sx={{ width: 150, flex: 'none', pr: 1.5, display: { xs: 'none', sm: 'flex' } }}>
-            {[[FAULT, 'Suspected area'], [C.blue, 'Sensor point'], [ACCENT, 'Selected part']].map(([color, label]) => (
-              <Stack key={label} direction="row" alignItems="center" gap={1}>
-                <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: color, flex: 'none' }} />
-                <Typography fontSize={13} color="text.secondary">{t(label)}</Typography>
-              </Stack>
-            ))}
-          </Stack>
-        )}
       </Box>
       {/* readout of the highlighted part, from the same live readings, below the drawing */}
-      <Box sx={{ display: overview ? 'none' : 'block', px: 1.75, py: 1, borderTop: `1px solid ${C.line}`, bgcolor: '#FFFFFF' }} aria-live="polite">
+      <Box sx={{ px: 1.75, py: 1, borderTop: `1px solid ${C.line}`, bgcolor: '#FFFFFF' }} aria-live="polite">
         <Stack direction="row" alignItems="center" gap={1}>
           <Typography fontWeight={800} noWrap flex={1} minWidth={0} sx={{ color: alarmColor }}>{litPart ? t(litPart.name) : '—'}</Typography>
         </Stack>
