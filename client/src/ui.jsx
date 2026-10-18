@@ -36,7 +36,7 @@ export function LogoIcon({ size = 30 }) {
 
 export function LogoMark({ height = 44 }) {
   return (
-    <svg height={height} viewBox="10 10 204 100" role="img" aria-label="Dr. Macx">
+    <svg width={height * 2.04} height={height} viewBox="10 10 204 100" role="img" aria-label="Dr. Macx">
       <path d={D_PATH} fill={C.blue} />
       <path d={PULSE} fill="none" stroke="#FFFFFF" strokeWidth="8" strokeLinejoin="round" />
       <polygon points="122,10 146,10 214,110 190,110" fill={C.blue} />
