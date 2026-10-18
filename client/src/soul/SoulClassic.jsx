@@ -341,7 +341,7 @@ function Main({ session, onChange, onExit }) {
           display: 'grid', gap: 1.5, minHeight: 0,
           gridTemplateColumns: fit ? 'minmax(0,9fr) minmax(0,3fr)' : '1fr',
           gridTemplateRows: fit ? 'auto minmax(0,1fr) auto' : 'none',
-          gridTemplateAreas: fit ? '"oee tabs" "soul tabs" "progress actions"' : '"oee" "soul" "progress" "actions" "tabs"',
+          gridTemplateAreas: fit ? '"oee tabs" "soul tabs" "progress tabs"' : '"oee" "soul" "progress" "tabs"',
         }}
       >
         <OeePanel row={row} ring={short ? 112 : 132} demo={demo} lang={lang} onAdvice={messages.reload} />
@@ -379,8 +379,20 @@ function Main({ session, onChange, onExit }) {
             </Box>
             <SaidPanel
               said={said} question={question} row={row} now={now} short={short} talking={voice.talking} onReplay={(m) => voice.say(m.text)}
-              facts={factsOf([...pendingNow, ...(shiftStops.data?.events ?? [])], row, now)} hello="Hello! I will tell you when something changes. Ask me anything with the buttons on the right."
-            />
+              facts={factsOf([...pendingNow, ...(shiftStops.data?.events ?? [])], row, now)} hello="Hello! I will tell you when something changes. Ask me anything with the buttons below."
+            >
+              <Box data-tour="kiosk-actions" sx={{ display: 'grid', gap: 1, gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)' }}>
+                <Button variant="contained" onClick={ask} disabled={asked?.loading} startIcon={<ChatIcon />} sx={{ minHeight: 38, fontSize: 14, fontWeight: 700, borderRadius: R.inner }}>
+                  {t('Ask Dr. Macx')}
+                </Button>
+                <Button
+                  variant="outlined" color="primary" onClick={() => setTalk({ question })} startIcon={<WaveIcon />}
+                  sx={{ minHeight: 38, fontSize: 14, fontWeight: 700, borderRadius: R.inner, bgcolor: '#FFFFFF', ...(question && { borderWidth: 2, borderColor: SEV.ask.color, color: SEV.ask.text, '&:hover': { borderWidth: 2, borderColor: SEV.ask.text } }) }}
+                >
+                  {t(question ? 'Answer my question' : 'Explain by voice')}
+                </Button>
+              </Box>
+            </SaidPanel>
           </Box>
         </Card>
 
@@ -417,17 +429,6 @@ function Main({ session, onChange, onExit }) {
           </Box>
         </Card>
 
-        <Box data-tour="kiosk-actions" sx={{ gridArea: 'actions', display: 'grid', gap: 1, gridTemplateColumns: fit ? '1fr' : '1fr 1fr', alignContent: 'end' }}>
-          <Button variant="contained" onClick={ask} disabled={asked?.loading} startIcon={<ChatIcon />} sx={{ minHeight: 40, fontSize: 15, fontWeight: 700, borderRadius: R.inner }}>
-            {t('Ask Dr. Macx')}
-          </Button>
-          <Button
-            variant="outlined" color="primary" onClick={() => setTalk({ question })} startIcon={<WaveIcon />}
-            sx={{ minHeight: 40, fontSize: 15, fontWeight: 700, borderRadius: R.inner, bgcolor: '#FFFFFF', ...(question && { borderWidth: 2, borderColor: SEV.ask.color, color: SEV.ask.text, '&:hover': { borderWidth: 2, borderColor: SEV.ask.text } }) }}
-          >
-            {t(question ? 'Answer my question' : 'Explain by voice')}
-          </Button>
-        </Box>
       </Box>
 
       {opened && (
@@ -735,14 +736,14 @@ function Progress({ row, live, now }) {
     </Box>
   );
   return (
-    <Card data-tour="kiosk-progress" sx={{ ...panel, py: 0.75, gridArea: 'progress' }}>
+    <Card data-tour="kiosk-progress" sx={{ ...panel, py: 0.5, gridArea: 'progress' }}>
       <ButtonBase
         onClick={() => setOpen(!open)} aria-expanded={open} aria-label={t(open ? 'Hide the production figures' : 'Show the production figures')}
         sx={{ display: 'block', width: '100%', textAlign: 'left', borderRadius: R.inner }}
       >
         {open && (
           <Typography variant="caption" color="text.secondary" component="div" noWrap mb={0.5}>
-            {t(live.shift.name)} · {duration(Math.max(0, live.shift.end - now))} {t('left')} · {num(plan.toNow)} {t('pcs due by now')} · {t('plan = planned time ÷ ideal cycle time')} ({row.idealCycleTime} s)
+            {num(plan.toNow)} {t('pcs due by now')} · {t('plan = planned time ÷ ideal cycle time')} ({row.idealCycleTime} s)
           </Typography>
         )}
         {open && (
@@ -753,12 +754,13 @@ function Progress({ row, live, now }) {
           </Box>
         )}
         <Stack direction="row" alignItems="center" gap={1.5}>
-          <Typography fontWeight={700} fontSize={13} component="h2" noWrap>{t('Production progress')}</Typography>
+          <Typography fontWeight={700} fontSize={13} component="h2" noWrap>{t('Production progress')} · {t(live.shift.name)}</Typography>
           <Box sx={{ position: 'relative', flex: 1, height: 8, borderRadius: 4, bgcolor: '#E2E8F0', overflow: 'hidden' }} role="img" aria-label={`${t('Actual qty by now')} ${good} · ${t('Schedule plan')} ${plan.shift}`}>
             <Box sx={{ position: 'absolute', inset: 0, width: `${Math.min(100, share * 100)}%`, bgcolor: k ? LEVELS[k].bar : C.blue, borderRadius: 4 }} />
             <Box sx={{ position: 'absolute', top: 0, bottom: 0, left: `${plan.shift ? Math.min(100, (plan.toNow / plan.shift) * 100) : 0}%`, width: 2, bgcolor: C.ink }} />
           </Box>
-          <Typography sx={{ fontSize: 16, fontWeight: 800, lineHeight: 1 }}>{Math.round(share * 100)}%</Typography>
+          <Typography variant="caption" color="text.secondary" noWrap>{duration(Math.max(0, live.shift.end - now))} {t('left')}</Typography>
+          <Typography sx={{ fontSize: 15, fontWeight: 800, lineHeight: 1 }}>{Math.round(share * 100)}%</Typography>
           <FoldIcon sx={{ fontSize: 20, color: 'text.secondary', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 150ms' }} />
         </Stack>
       </ButtonBase>
