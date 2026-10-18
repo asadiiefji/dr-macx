@@ -99,8 +99,9 @@ export function factsOf(stops, row, now) {
 
 // What the machine said last: when, the headline in its own words (wave button says it again), the text (tap to read
 // all, tap again to fold) and the facts. children (e.g. buttons) come last; when the opened text does not fit, the
-// facts and children step aside until it is folded.
-export function SaidPanel({ said, question, row, now, short, talking, facts, onReplay, hello, children }) {
+// facts and children step aside until it is folded. top = the message at the top and the children at the bottom
+// (else everything is centred).
+export function SaidPanel({ said, question, row, now, short, talking, facts, onReplay, hello, top, children }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [crowded, setCrowded] = useState(false);
@@ -112,7 +113,7 @@ export function SaidPanel({ said, question, row, now, short, talking, facts, onR
   }, [open]);
   const toggle = () => setOpen(!open);
   return (
-    <Box ref={col} sx={{ display: 'flex', flexDirection: 'column', justifyContent: crowded ? 'flex-start' : 'center', gap: 0.75, minWidth: 0, minHeight: 0, overflowY: crowded ? 'auto' : 'visible' }}>
+    <Box ref={col} sx={{ display: 'flex', flexDirection: 'column', justifyContent: crowded || top ? 'flex-start' : 'center', gap: 0.75, minWidth: 0, minHeight: 0, overflowY: crowded ? 'auto' : 'visible' }}>
       {said && (
         <Typography color="text.secondary" fontSize={12.5}>
           {t('Since')} {hhmm(said.at)} · <b style={{ color: SEV.error.text }}>{duration(Math.max(0, now - said.at))}</b> {t('ago')}
@@ -154,7 +155,7 @@ export function SaidPanel({ said, question, row, now, short, talking, facts, onR
           </Stack>
         ))}
       </Box>
-      {children && <Box sx={{ display: crowded ? 'none' : 'block' }}>{children}</Box>}
+      {children && <Box sx={{ display: crowded ? 'none' : 'block', ...(top && { mt: 'auto', pt: 1 }) }}>{children}</Box>}
     </Box>
   );
 }

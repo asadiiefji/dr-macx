@@ -378,7 +378,7 @@ function Main({ session, onChange, onExit }) {
               {voice.talking && <Chip size="small" color="primary" icon={<WaveIcon />} label={t('Speaking…')} sx={{ position: 'absolute', left: 10, bottom: 10 }} />}
             </Box>
             <SaidPanel
-              said={said} question={question} row={row} now={now} short={short} talking={voice.talking} onReplay={(m) => voice.say(m.text)}
+              top said={said} question={question} row={row} now={now} short={short} talking={voice.talking} onReplay={(m) => voice.say(m.text)}
               facts={factsOf([...pendingNow, ...(shiftStops.data?.events ?? [])], row, now)} hello="Hello! I will tell you when something changes. Ask me anything with the buttons below."
             >
               <Box data-tour="kiosk-actions" sx={{ display: 'grid', gap: 1, gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)' }}>
@@ -662,26 +662,26 @@ function Recent({ messages, events, onOpen, onAll }) {
   const t = useT();
   const byMessage = new Map(events.filter((e) => e.message).map((e) => [e.message.id, e]));
   return (
-    <Box sx={{ flex: 1, minHeight: 140, maxHeight: { xs: 300, lg: 'none' }, display: 'flex', flexDirection: 'column', border: `1px solid ${C.line}`, borderRadius: R.inner }}>
+    <Box sx={{ flex: 1, minWidth: 0, minHeight: 140, display: 'flex', flexDirection: 'column', border: `1px solid ${C.line}`, borderRadius: R.inner }}>
       <Stack direction="row" alignItems="center" sx={{ px: 1.25, py: 0.5, borderBottom: `1px solid ${C.line}` }}>
         <Typography fontWeight={700} fontSize={13.5} flex={1}>{t('Recent messages')}</Typography>
         <Button size="small" endIcon={<ArrowIcon />} onClick={onAll} sx={{ minHeight: 28, py: 0 }}>{t('View all')}</Button>
       </Stack>
-      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', py: 0.5 }}>
+      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', py: 0.5 }}>
         {!messages && <LinearProgress />}
         {messages?.length === 0 && <Typography variant="body2" color="text.secondary" sx={{ px: 1.25 }}>{t('Nothing yet.')}</Typography>}
         {messages?.map((m) => {
           const e = byMessage.get(m.id);
           return (
             <Stack
-              key={m.id} direction="row" gap={1} alignItems="center" onClick={e ? () => onOpen(e) : undefined}
+              key={m.id} direction="row" gap={1} alignItems="flex-start" onClick={e ? () => onOpen(e) : undefined}
               role={e ? 'button' : undefined} tabIndex={e ? 0 : undefined} onKeyDown={e ? (ev) => ev.key === 'Enter' && onOpen(e) : undefined}
-              sx={{ minHeight: 30, px: 1.25, cursor: e ? 'pointer' : 'default', '&:hover': e ? { bgcolor: '#F8FAFC' } : undefined }}
+              sx={{ px: 1.25, py: 0.75, cursor: e ? 'pointer' : 'default', '&:hover': e ? { bgcolor: '#F8FAFC' } : undefined }}
             >
-              <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: DOT[m.kind] ?? '#94A3B8', flex: 'none' }} />
+              <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: DOT[m.kind] ?? '#94A3B8', flex: 'none', mt: 0.75 }} />
               <Typography variant="body2" color="text.secondary" sx={{ width: 40, flex: 'none', fontSize: 12.5 }}>{hhmm(m.at)}</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ width: 96, flex: 'none', fontSize: 12 }} noWrap>{t(KIND[m.kind] ?? m.kind)}</Typography>
-              <Typography variant="body2" noWrap flex={1} sx={{ fontSize: 13 }}>{m.text}</Typography>
+              <Typography variant="body2" flex={1} sx={{ fontSize: 13, minWidth: 0, overflowWrap: 'anywhere' }}>{m.text}</Typography>
             </Stack>
           );
         })}
