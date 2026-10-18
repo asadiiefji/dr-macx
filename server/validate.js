@@ -1,4 +1,8 @@
 // Request-body validation for master data. Each parser returns { value } or { error }.
+
+// A document id from a URL or a body is one path segment: one with "/" (sent as %2F) or "." / ".." would address
+// another document (e.g. a machine's downtime record), so it is refused.
+export const badId = (x) => typeof x !== 'string' || !x || x.includes('/') || x === '.' || x === '..';
 import { FRAMES, SETUPS, pressDefaults, sensorsFor } from './sensors.js';
 
 export const CATEGORIES = ['Breakdown', 'Changeover', 'Material', 'Minor stop', 'Quality', 'Operator break', 'Other'];

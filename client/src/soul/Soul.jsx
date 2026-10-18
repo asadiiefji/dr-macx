@@ -1,10 +1,10 @@
 // Machine Soul: the kiosk screen next to a press. Pick the press, sign in with an employee number, then a full-screen
 // dashboard: the press speaks for itself (3D character + voice), shows OEE, schedule vs actual, events, sensors and anatomy.
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link as RouterLink } from 'react-router';
 import {
   Alert, Box, Button, ButtonBase, Card, CardActionArea, CardContent, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
-  DialogTitle, Divider, Grid, IconButton, InputAdornment, LinearProgress, ListItemIcon, ListSubheader, Menu, MenuItem, Snackbar,
+  DialogTitle, Divider, Grid, IconButton, LinearProgress, ListItemIcon, ListSubheader, Menu, MenuItem, Snackbar,
   Stack, Tab, Tabs, TextField, Tooltip, Typography, useMediaQuery,
 } from '@mui/material';
 import VolumeUpIcon from '@mui/icons-material/VolumeUpOutlined';
@@ -15,7 +15,6 @@ import MicIcon from '@mui/icons-material/MicNoneOutlined';
 import StopIcon from '@mui/icons-material/StopCircleOutlined';
 import ChatIcon from '@mui/icons-material/ChatRounded';
 import WaveIcon from '@mui/icons-material/GraphicEqRounded';
-import GlobeIcon from '@mui/icons-material/LanguageRounded';
 import CalendarIcon from '@mui/icons-material/CalendarMonthOutlined';
 import ArrowIcon from '@mui/icons-material/ArrowForwardRounded';
 import HandoverIcon from '@mui/icons-material/HistoryEduOutlined';
@@ -27,17 +26,7 @@ import UpIcon from '@mui/icons-material/NorthEastRounded';
 import SettingsIcon from '@mui/icons-material/SettingsOutlined';
 import SearchIcon from '@mui/icons-material/SearchRounded';
 import DropIcon from '@mui/icons-material/KeyboardArrowDownRounded';
-import TimerIcon from '@mui/icons-material/TimerOutlined';
-import RepeatIcon from '@mui/icons-material/RepeatRounded';
-import AlarmIcon from '@mui/icons-material/NotificationsActiveOutlined';
-import AlarmOffIcon from '@mui/icons-material/NotificationsOffOutlined';
 import BellIcon from '@mui/icons-material/NotificationsRounded';
-import PlayIcon from '@mui/icons-material/PlayCircleOutlineRounded';
-import PlcIcon from '@mui/icons-material/DeveloperBoardOutlined';
-import TempIcon from '@mui/icons-material/ThermostatOutlined';
-import VibIcon from '@mui/icons-material/VibrationOutlined';
-import MotorIcon from '@mui/icons-material/ElectricBoltOutlined';
-import SensorsIcon from '@mui/icons-material/SensorsOutlined';
 import StatusIcon from '@mui/icons-material/MonitorHeartOutlined';
 import ProgressIcon from '@mui/icons-material/TrackChangesRounded';
 import OutputIcon from '@mui/icons-material/Inventory2Outlined';
@@ -49,7 +38,7 @@ import ShrinkIcon from '@mui/icons-material/CloseFullscreenRounded';
 import DownIcon from '@mui/icons-material/SouthEastRounded';
 import { api, useCollection, useGet, useLive } from '../api.js';
 import { Logo, StatusChip, duration, num } from '../ui.jsx';
-import { C, LEVELS, STATUS, level } from '../theme.js';
+import { C, LEVELS, level } from '../theme.js';
 import { useDictation } from '../StopConfirm.jsx';
 import { sensorsFor, useSensorCatalog, valueOf } from '../sensors.js';
 import PressCharacter, { EMOTIONS } from './PressCharacter.jsx';
@@ -59,6 +48,7 @@ import { TourButton, TourHost } from '../Tour.jsx';
 import Handovers from '../Handovers.jsx';
 import { Dual, I18nProvider, useLang, useT } from '../i18n.jsx';
 import { BreakdownButton, FactorSim, useSim } from '../Simulate.jsx';
+import { MachineStatus, SaidPanel, factsOf } from './Pieces.jsx';
 import { AnatomyTab, BulkConfirm, EventDetail2, EventFilter, EventList, HistoryPopup, Popup, SEV, SensorsTab, buildEvents, hhmm } from './Panels.jsx';
 
 const SESSION = 'drmacx.soul';
@@ -675,95 +665,11 @@ function OeePanel({ action, row, ring, demo, max }) {
   );
 }
 
-// Machine status at a glance: running state, PLC alarm and two sensor groups (temperature and vibration on Premium;
-// motor current and the laser eye on Essential), each judged OK / Warning / Alarm from the live sensor status.
-const STATE_COLOR = { ok: SEV.ok.color, warn: SEV.warn.color, alarm: SEV.error.color, none: '#94A3B8' };
-const worst = (row, ids) => ['alarm', 'warn', 'ok'].find((s) => ids.some((id) => row.sensorStatus?.[id] === s)) ?? 'none';
-const word = (state, ok) => ({ ok, warn: 'Warning', alarm: 'Alarm', none: 'No data' })[state];
-
-function MachineStatus({ action, row, now }) {
-  const t = useT();
-  const alarm = row.tags?.alarmCode;
-  const premium = row.setup === 'premium';
-  const motor = { running: 'Running', idle: 'Idle', off: 'Off', break: 'Break' }[row.motor];
-  const temp = worst(row, ['tempMotor', 'tempGearbox', 'tempLube']);
-  const vib = worst(row, ['vibMotor', 'vibGearbox']);
-  const eye = worst(row, ['laserEye']);
-  const tiles = [
-    { Icon: PlayIcon, label: 'Current state', value: STATUS[row.status]?.label ?? row.status, state: row.status === 'running' ? 'ok' : row.status === 'stopped' ? 'alarm' : 'none' },
-    { Icon: PlcIcon, label: 'PLC status', value: alarm ? `${t('Alarm')} ${alarm}` : 'No alarm', state: alarm ? 'alarm' : row.tags ? 'ok' : 'none' },
-    premium ? { Icon: TempIcon, label: 'Temperature', state: temp, value: word(temp, 'Normal') } : { Icon: MotorIcon, label: 'Motor current', state: worst(row, ['motorCurrent']), value: motor ?? 'No data' },
-    premium ? { Icon: VibIcon, label: 'Vibration', state: vib, value: word(vib, 'Stable') } : { Icon: SensorsIcon, label: 'Laser eye', state: eye, value: word(eye, 'Counting') },
-  ];
-  return (
-    <Card data-tour="kiosk-status" sx={{ ...panel, flex: 'none', py: 1 }}>
-      <Stack direction="row" alignItems="center" gap={1} mb={0.75}>
-        <StatusIcon sx={{ fontSize: 17, color: 'text.secondary' }} />
-        <Typography fontWeight={700} fontSize={13} component="h2" flex={1}>{t('Machine status')}</Typography>
-        <Typography variant="caption" color="text.secondary">{t('Updated')} {new Date(now).toLocaleTimeString(undefined, { hourCycle: 'h23' })}</Typography>
-        {action}
-      </Stack>
-      <Box sx={{ display: 'grid', gap: 0.75, gridTemplateColumns: 'repeat(4, minmax(0,1fr))' }}>
-        {tiles.map(({ Icon, label, value, state }) => (
-          <Stack key={label} alignItems="center" textAlign="center" sx={{ px: 0.5, py: 0.5, borderRadius: R.inner, border: `1px solid ${C.line}`, minWidth: 0 }}>
-            <Icon sx={{ fontSize: 18, color: STATE_COLOR[state] }} />
-            <Typography fontWeight={700} fontSize={11.5} noWrap maxWidth="100%" sx={{ color: state === 'alarm' ? SEV.error.text : state === 'warn' ? SEV.warn.text : C.ink }}>{t(value)}</Typography>
-            <Typography color="text.secondary" fontSize={10} noWrap maxWidth="100%">{t(label)}</Typography>
-          </Stack>
-        ))}
-      </Box>
-    </Card>
-  );
-}
-
-// The big headline above what the machine said, in its own words (first person): from the kind of message, or from
-// its state when it has said nothing yet.
-const HEAD = {
-  stop: 'I have stopped.', question: 'I have a question for you.', advice: 'Here is my advice.', report: 'I checked your explanation.',
-  cycle: 'My cycle time needs a look.', handover: 'Here is my shift handover.',
-};
-const STATE_HEAD = { running: 'I am running.', stopped: 'I have stopped.', break: 'I am on a planned break.', disconnected: 'I am not connected.', inactive: 'I am switched off.' };
-function headlineOf(m, row) {
-  if (!m) return STATE_HEAD[row.status] ?? 'I am running.';
-  if (m.kind === 'risk') return m.data?.reachable === false ? 'I cannot reach my target this shift.' : 'I am producing below target.';
-  if (m.kind === 'anomaly') return m.data?.state === 'alarm' ? 'Something is wrong with me.' : 'One of my sensors looks off.';
-  return HEAD[m.kind] ?? 'I have something to tell you.';
-}
-
-// Three facts under what the machine said: this shift's longest loss, its most frequent stop, and the PLC alarm now.
-function factsOf(stops, row, now) {
-  const by = new Map();
-  for (const e of stops) {
-    const name = e.reason || 'Reason not given';
-    const g = by.get(name) ?? by.set(name, { name, sec: 0, n: 0 }).get(name);
-    g.sec += e.durationSec ?? Math.max(0, now - e.start) / 1000;
-    g.n += 1;
-  }
-  const groups = [...by.values()];
-  const longest = [...groups].sort((a, b) => b.sec - a.sec)[0];
-  const most = [...groups].sort((a, b) => b.n - a.n).find((g) => g !== longest);
-  const alarm = row.tags?.alarmCode;
-  return [
-    longest ? { Icon: TimerIcon, sev: SEV.warn, big: `${Math.max(1, Math.round(longest.sec / 60))} min`, small: longest.name } : { Icon: CheckIcon, sev: SEV.ok, big: 'No stops', small: 'this shift' },
-    most && { Icon: RepeatIcon, sev: SEV.error, big: `${most.n} ×`, small: most.name },
-    alarm ? { Icon: AlarmIcon, sev: SEV.error, big: `Alarm ${alarm}`, small: 'PLC alarm active' } : { Icon: AlarmOffIcon, sev: SEV.info, big: 'No PLC alarm', small: 'right now' },
-  ].filter(Boolean);
-}
-
 // The machine speaks: its face and mood on the left; on the right the headline, what it said (tap to read all), three
 // facts, and what the operator can do: investigate it, ask, explain or answer.
 function Hero({ action, said, question, row, now, short, demo, onAdvice, emotion, mood, talking, reduced, facts, onReplay, canInvestigate, onInvestigate, asking, onAsk, onExplain, onAnswer }) {
   const t = useT();
-  const [open, setOpen] = useState(false);
-  const [crowded, setCrowded] = useState(false); // the opened text does not fit: the facts and buttons step aside
   const [menu, setMenu] = useState(null);
-  const col = useRef(null);
-  useEffect(() => setOpen(false), [said?.id]);
-  useLayoutEffect(() => {
-    if (!open) return setCrowded(false);
-    if (col.current && col.current.scrollHeight > col.current.clientHeight + 1) setCrowded(true);
-  }, [open]);
-  const toggle = () => setOpen(!open);
   return (
     <Card data-tour="kiosk-soul" sx={{ ...panel, position: 'relative', p: 1.5, display: 'grid', gap: 2, minWidth: 0, overflowY: 'auto', gridTemplateColumns: { xs: '1fr', md: 'minmax(0,4fr) minmax(0,6fr)' } }}>
       <Box sx={{ position: 'absolute', top: 6, right: 6, zIndex: 1 }}>{action}</Box>
@@ -782,49 +688,8 @@ function Hero({ action, said, question, row, now, short, demo, onAdvice, emotion
         {demo && row.sim && <DemoActions row={row} onAdvice={onAdvice} />}
       </Box>
 
-      <Box ref={col} sx={{ display: 'flex', flexDirection: 'column', justifyContent: crowded ? 'flex-start' : 'center', gap: 0.75, minWidth: 0, minHeight: 0, overflowY: crowded ? 'auto' : 'visible' }}>
-        {said && (
-          <Typography color="text.secondary" fontSize={12.5}>
-            {t('Since')} {hhmm(said.at)} · <b style={{ color: SEV.error.text }}>{duration(Math.max(0, now - said.at))}</b> {t('ago')}
-          </Typography>
-        )}
-        <Stack direction="row" alignItems="flex-start" gap={1.5}>
-          <Typography component="h2" sx={{ flex: 1, minWidth: 0, fontSize: { xs: 20, lg: short ? 21 : 24 }, fontWeight: 800, lineHeight: 1.2, letterSpacing: '-0.02em', color: question ? SEV.ask.text : C.ink }}>
-            {t(headlineOf(said, row))}
-          </Typography>
-          {said && (
-            <Tooltip title={t(talking ? 'Speaking…' : 'Say it again')}>
-              <IconButton
-                aria-label={t('Say it again')} onClick={() => onReplay(said)}
-                sx={{ width: 38, height: 38, flex: 'none', bgcolor: C.light, color: C.blue, '&:hover': { bgcolor: '#BBDEFB' }, animation: talking ? 'soulPulse 1s ease-in-out infinite' : 'none', '@keyframes soulPulse': { '50%': { transform: 'scale(1.1)' } } }}
-              >
-                <WaveIcon />
-              </IconButton>
-            </Tooltip>
-          )}
-        </Stack>
-        <Box
-          role="button" tabIndex={0} aria-expanded={open} aria-live="polite" onClick={toggle}
-          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggle())}
-          sx={{ cursor: 'pointer', borderRadius: R.inner, '&:focus-visible': { outline: `2px solid ${C.blue}` } }}
-        >
-          <Typography sx={{ fontSize: { xs: 14, lg: 15 }, lineHeight: 1.45, color: 'text.secondary', ...(!open && { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }) }}>
-            {said?.text ?? t('Hello! I will tell you when something changes. Ask me anything with the buttons below.')}
-          </Typography>
-          <Typography color="text.secondary" fontSize={11.5}>{t(open ? 'Tap to fold' : 'Tap to read all')}</Typography>
-        </Box>
-        <Box sx={{ display: crowded ? 'none' : 'grid', gap: 0.75, gridTemplateColumns: { xs: '1fr', sm: `repeat(${facts.length}, minmax(0,1fr))` } }}>
-          {facts.map(({ Icon, sev, big, small }) => (
-            <Stack key={`${big}-${small}`} direction="row" gap={1} alignItems="center" sx={{ px: 1, py: 0.5, borderRadius: R.inner, border: `1px solid ${C.line}`, minWidth: 0 }}>
-              <Box sx={{ width: 28, height: 28, borderRadius: '50%', bgcolor: sev.bg, display: 'grid', placeItems: 'center', flex: 'none' }}><Icon sx={{ fontSize: 16, color: sev.color }} /></Box>
-              <Box minWidth={0}>
-                <Typography fontWeight={800} fontSize={13.5} noWrap>{t(big)}</Typography>
-                <Typography color="text.secondary" fontSize={11.5} noWrap>{t(small)}</Typography>
-              </Box>
-            </Stack>
-          ))}
-        </Box>
-        <Box data-tour="kiosk-actions" sx={{ display: crowded ? 'none' : 'grid', gap: 0.75, gridTemplateColumns: { xs: '1fr', sm: 'minmax(0,1fr) minmax(0,1fr)' } }}>
+      <SaidPanel said={said} question={question} row={row} now={now} short={short} talking={talking} facts={facts} onReplay={onReplay} hello="Hello! I will tell you when something changes. Ask me anything with the buttons below.">
+        <Box data-tour="kiosk-actions" sx={{ display: 'grid', gap: 0.75, gridTemplateColumns: { xs: '1fr', sm: 'minmax(0,1fr) minmax(0,1fr)' } }}>
           <Button
             variant="contained" disabled={!canInvestigate} onClick={onInvestigate} startIcon={<SearchIcon />} endIcon={<ArrowIcon />}
             sx={{ minHeight: 38, fontSize: 14, fontWeight: 700, borderRadius: R.inner }}
@@ -849,7 +714,7 @@ function Hero({ action, said, question, row, now, short, demo, onAdvice, emotion
           <MenuItem onClick={() => (setMenu(null), onExplain())}><ListItemIcon><MicIcon fontSize="small" /></ListItemIcon>{t('Explain by voice')}</MenuItem>
           {question && <MenuItem onClick={() => (setMenu(null), onAnswer())}><ListItemIcon><WaveIcon fontSize="small" /></ListItemIcon>{t('Answer my question')}</MenuItem>}
         </Menu>
-      </Box>
+      </SaidPanel>
     </Card>
   );
 }

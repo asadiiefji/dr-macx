@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link as RouterLink } from 'react-router';
 import {
   Alert, Box, Button, Card, CardActionArea, CardContent, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
-  DialogTitle, Grid, IconButton, InputAdornment, LinearProgress, MenuItem, Snackbar, Stack, Tab, Tabs, TextField, Tooltip,
+  ButtonBase, DialogTitle, Grid, IconButton, InputAdornment, LinearProgress, MenuItem, Snackbar, Stack, Tab, Tabs, TextField, Tooltip,
   Typography, useMediaQuery,
 } from '@mui/material';
 import VolumeUpIcon from '@mui/icons-material/VolumeUpOutlined';
@@ -27,6 +27,10 @@ import CheckIcon from '@mui/icons-material/CheckRounded';
 import DemoIcon from '@mui/icons-material/ScienceOutlined';
 import UpIcon from '@mui/icons-material/NorthEastRounded';
 import DownIcon from '@mui/icons-material/SouthEastRounded';
+import HistoryIcon from '@mui/icons-material/HistoryRounded';
+import StatusIcon from '@mui/icons-material/MonitorHeartOutlined';
+import FoldIcon from '@mui/icons-material/KeyboardArrowUpRounded';
+import { MachineStatus, SaidPanel, factsOf } from './Pieces.jsx';
 import { api, useCollection, useGet, useLive } from '../api.js';
 import { Logo, StatusChip, duration, num } from '../ui.jsx';
 import { C, LEVELS, level } from '../theme.js';
@@ -206,7 +210,6 @@ function Main({ session, onChange, onExit }) {
   const shiftRange = live ? `from=${live.shift.start}&to=${live.shift.end}` : null;
   const shiftStops = usePoll(shiftRange && `/machines/${machineId}/downtime?${shiftRange}`, 15000);
   const reasons = useCollection('reasons');
-  const presses = useCollection('machines').rows.filter((m) => m.active !== false).sort((a, b) => a.code.localeCompare(b.code));
   const catalog = useSensorCatalog();
   const reduced = useMediaQuery('(prefers-reduced-motion: reduce)');
   const fit = useMediaQuery('(min-width:1200px) and (min-height:680px)');
@@ -224,6 +227,8 @@ function Main({ session, onChange, onExit }) {
   const [refresh, setRefresh] = useState(0);
   const [allSaid, setAllSaid] = useState(false);
   const [handovers, setHandovers] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false); // machine status popup (from the top bar)
+  const [recentOpen, setRecentOpen] = useState(false); // recent messages popup (History button)
   const [talk, setTalk] = useState(null); // { question } while the voice dialog is open
   const [asked, setAsked] = useState(null); // Ask Dr. Macx popup: { loading } → { msg } or { error }
   const [toast, setToast] = useState('');
@@ -290,6 +295,7 @@ function Main({ session, onChange, onExit }) {
   if (!row) return <Alert severity="warning" sx={{ m: 2 }}>{t('This machine is no longer monitored.')} <Button onClick={onExit}>{t('Pick another')}</Button></Alert>;
 
   const question = messages.data?.find((m) => m.needsAnswer && !m.answered && m.at >= live.shift.start);
+  const said = question ?? messages.data?.find((m) => m.kind !== 'operator'); // what the message panel shows
   const opened = openEv && (events.find((e) => e.id === openEv.id) ?? openEv);
   const waiting = events.filter((e) => e.stop || e.needsAnswer).length; // stops and questions waiting for the operator
   const emotion = emotionOf(row, now, waiting);
@@ -306,15 +312,6 @@ function Main({ session, onChange, onExit }) {
     return (top.length ? top : reasons.rows.filter((r) => r.type !== 'planned').map((r) => r.name)).slice(0, 5);
   })();
 
-  const switchPress = async (id) => {
-    if (id === machineId) return;
-    try {
-      const out = await api('/soul/verify', { method: 'POST', body: { machineId: id, code: operator.code } });
-      onChange({ ...session, machineId: id, machine: out.machine, greet: true });
-    } catch (e) {
-      setToast(e.message);
-    }
-  };
   // Ask Dr. Macx: a popup where the press thinks while Gemini reads its sensors, then says the answer (subtitled).
   const ask = async () => {
     setAsked({ loading: true });
@@ -337,7 +334,7 @@ function Main({ session, onChange, onExit }) {
         display: 'grid', gridTemplateRows: 'auto minmax(0,1fr)',
       }}
     >
-      <TopBar row={row} live={live} now={now} presses={presses} operator={operator} onSwitch={switchPress} onHandovers={() => setHandovers(true)} onExit={onExit} demo={demo} onDemo={() => onChange({ ...session, demo: !demo })} />
+      <TopBar row={row} live={live} now={now} operator={operator} onStatus={() => setStatusOpen(true)} onHandovers={() => setHandovers(true)} onExit={onExit} demo={demo} onDemo={() => onChange({ ...session, demo: !demo })} />
 
       <Box
         sx={{
@@ -354,8 +351,11 @@ function Main({ session, onChange, onExit }) {
           <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
             <Typography fontWeight={700} fontSize={16} component="h2">{t('Dr. Macx Live')}</Typography>
             <Chip size="small" label={t(`${mood.label} mood`)} sx={{ height: 22, fontSize: 12, bgcolor: `${mood.color}22`, color: C.ink, border: `1px solid ${mood.color}` }} />
-            <Typography variant="body2" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' } }}>{t('Your AI assistant for this machine · I speak when something changes')}</Typography>
+            <Typography variant="body2" color="text.secondary" noWrap sx={{ display: { xs: 'none', md: 'block' }, minWidth: 0 }}>{t('Your AI assistant for')} {row.name}</Typography>
             <Box flex={1} />
+            <Button data-tour="kiosk-history" variant="outlined" color="inherit" startIcon={<HistoryIcon />} onClick={() => setRecentOpen(true)} sx={{ ...tight, px: 1.5, borderColor: C.line, borderRadius: R.inner, fontWeight: 600 }}>
+              {t('History')}
+            </Button>
             <TextField
               data-tour="kiosk-lang"
               select size="small" value={lang} onChange={(e) => onChange({ ...session, lang: e.target.value })}
@@ -377,10 +377,10 @@ function Main({ session, onChange, onExit }) {
               </Box>
               {voice.talking && <Chip size="small" color="primary" icon={<WaveIcon />} label={t('Speaking…')} sx={{ position: 'absolute', left: 10, bottom: 10 }} />}
             </Box>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, minHeight: 0 }}>
-              <Bubble messages={messages.data} question={question} talking={voice.talking} onReplay={(m) => voice.say(m.text)} onAnswer={() => setTalk({ question })} />
-              <Recent messages={messages.data} events={events} onOpen={handlers.onOpen} onAll={() => setAllSaid(true)} />
-            </Box>
+            <SaidPanel
+              said={said} question={question} row={row} now={now} short={short} talking={voice.talking} onReplay={(m) => voice.say(m.text)}
+              facts={factsOf([...pendingNow, ...(shiftStops.data?.events ?? [])], row, now)} hello="Hello! I will tell you when something changes. Ask me anything with the buttons on the right."
+            />
           </Box>
         </Card>
 
@@ -443,6 +443,14 @@ function Main({ session, onChange, onExit }) {
       <Popup open={allSaid} onClose={() => setAllSaid(false)} title={t('What I said')}>
         <SaidList messages={messages.data} onReplay={(m) => voice.say(m.text)} onAnatomy={(target) => (setAllSaid(false), showAnatomy(target))} />
       </Popup>
+      <Popup open={statusOpen} size="half" onClose={() => setStatusOpen(false)} title={`${row.code} · ${t('Machine status')}`}>
+        <MachineStatus row={row} now={now} />
+      </Popup>
+      <Popup open={recentOpen} size="half" onClose={() => setRecentOpen(false)} title={t('History')}>
+        <Box sx={{ height: { xs: '60vh', md: '55vh' }, display: 'flex' }}>
+          <Recent messages={messages.data} events={events} onOpen={(e) => (setRecentOpen(false), handlers.onOpen(e))} onAll={() => (setRecentOpen(false), setAllSaid(true))} />
+        </Box>
+      </Popup>
       <Popup open={handovers} size="half" onClose={() => setHandovers(false)} title={t('Shift handovers')}>
         {handovers && <Handovers machineId={machineId} />}
       </Popup>
@@ -472,7 +480,7 @@ function Spec({ label, value }) {
 
 const FRAME = { 'straight-side': 'Straight-side', 'c-frame': 'C-frame' };
 
-function TopBar({ row, live, now, presses, operator, onSwitch, onHandovers, onExit, demo, onDemo }) {
+function TopBar({ row, live, now, operator, onStatus, onHandovers, onExit, demo, onDemo }) {
   const t = useT();
   const lang = useLang();
   const locale = lang === 'en' ? undefined : BCP[lang];
@@ -480,24 +488,24 @@ function TopBar({ row, live, now, presses, operator, onSwitch, onHandovers, onEx
   const iconBtn = { border: `1px solid ${C.line}`, borderRadius: R.inner, width: 36, height: 36 };
   return (
     <Card data-tour="kiosk-top" sx={{ ...panel, px: 1.5, py: 0.75, display: 'flex', alignItems: 'center', columnGap: 2.5, rowGap: 1, flexWrap: 'wrap' }}>
-      <Stack direction="row" gap={1.25} alignItems="center" minWidth={0}>
-        <Box sx={{ width: 36, height: 36, borderRadius: R.inner, bgcolor: C.light, display: 'grid', placeItems: 'center', flex: 'none' }}>
-          <BuildIcon sx={{ color: C.blue, fontSize: 22 }} />
-        </Box>
-        <Box minWidth={0}>
-          <Stack direction="row" gap={1} alignItems="center">
-            <TextField
-              select variant="standard" value={row.id} onChange={(e) => onSwitch(e.target.value)}
-              slotProps={{ input: { disableUnderline: true }, htmlInput: { 'aria-label': t('Change machine') }, select: { renderValue: () => row.code } }}
-              sx={{ '& .MuiSelect-select': { fontSize: 19, fontWeight: 800, py: 0, pr: '24px !important', lineHeight: 1.2 } }}
-            >
-              {presses.map((m) => <MenuItem key={m.id} value={m.id}>{m.code} · {m.name}</MenuItem>)}
-            </TextField>
-            <StatusChip status={row.status} />
+      {/* the machine of this kiosk session (sign out to pick another); tap it for the machine status */}
+      <Tooltip title={t('Machine status')}>
+        <ButtonBase onClick={onStatus} aria-label={`${row.code} · ${t('Machine status')}`} sx={{ borderRadius: R.inner, p: 0.5, m: -0.5, justifyContent: 'flex-start', textAlign: 'left', '&:hover': { bgcolor: '#F1F5F9' } }}>
+          <Stack direction="row" gap={1.25} alignItems="center" minWidth={0}>
+            <Box sx={{ width: 36, height: 36, borderRadius: R.inner, bgcolor: C.light, display: 'grid', placeItems: 'center', flex: 'none' }}>
+              <BuildIcon sx={{ color: C.blue, fontSize: 22 }} />
+            </Box>
+            <Box minWidth={0}>
+              <Stack direction="row" gap={1} alignItems="center">
+                <Typography sx={{ fontSize: 19, fontWeight: 800, lineHeight: 1.2 }}>{row.code}</Typography>
+                <StatusChip status={row.status} />
+                <StatusIcon sx={{ fontSize: 17, color: 'text.secondary' }} />
+              </Stack>
+              <Typography variant="caption" color="text.secondary" noWrap component="div">{row.line} · {operator.name} ({operator.code})</Typography>
+            </Box>
           </Stack>
-          <Typography variant="caption" color="text.secondary" noWrap component="div">{row.line} · {operator.name} ({operator.code})</Typography>
-        </Box>
-      </Stack>
+        </ButtonBase>
+      </Tooltip>
       <Box sx={{ width: '1px', alignSelf: 'stretch', bgcolor: C.line, display: { xs: 'none', md: 'block' } }} />
       <Spec label={t('Machine type')} value={t(FRAME[row.frameType] ?? row.frameType)} />
       <Spec label={t('Rated tonnage')} value={`${row.ratedTonnage} t`} />
@@ -646,49 +654,6 @@ function OeePanel({ row, ring, demo, lang, onAdvice }) {
   );
 }
 
-// The latest thing the press said, as a speech bubble: tap it to read it all (tap again to fold it).
-// An open question gets an Answer button.
-function Bubble({ messages, question, talking, onReplay, onAnswer }) {
-  const t = useT();
-  const [open, setOpen] = useState(false);
-  const last = question ?? messages?.find((m) => m.kind !== 'operator');
-  useEffect(() => setOpen(false), [last?.id]);
-  return (
-    <Box
-      role="button" tabIndex={0} aria-expanded={open} aria-live="polite"
-      onClick={() => setOpen(!open)} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), setOpen(!open))}
-      sx={{
-        position: 'relative', flex: 'none', bgcolor: question ? SEV.ask.bg : C.light, border: `1px solid ${question ? SEV.ask.line : '#BBDEFB'}`,
-        borderRadius: R.inner, p: 1.25, pr: 6, cursor: 'pointer', maxHeight: open ? 'none' : undefined, '&:focus-visible': { outline: `2px solid ${C.blue}` },
-      }}
-    >
-      {question && <Typography variant="caption" fontWeight={700} sx={{ color: SEV.ask.text }} component="div">{t('Question for you')}</Typography>}
-      <Typography sx={{ fontSize: 15, fontWeight: 600, lineHeight: 1.45, color: C.ink, ...(!open && { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }) }}>
-        {last?.text ?? t('Hello! I will tell you when something changes. Ask me anything with the buttons on the right.')}
-      </Typography>
-      <Stack direction="row" alignItems="center" gap={1} mt={0.5}>
-        <Typography variant="caption" color="text.secondary">{t(open ? 'Tap to fold' : 'Tap to read all')}</Typography>
-        <Box flex={1} />
-        {question && (
-          <Button size="small" variant="contained" onClick={(ev) => (ev.stopPropagation(), onAnswer())} sx={{ minHeight: 28, py: 0, bgcolor: SEV.ask.color, '&:hover': { bgcolor: SEV.ask.text } }}>
-            {t('Answer')}
-          </Button>
-        )}
-      </Stack>
-      {last && (
-        <Tooltip title={t(talking ? 'Speaking…' : 'Say it again')}>
-          <IconButton
-            aria-label={t('Say it again')} onClick={(ev) => (ev.stopPropagation(), onReplay(last))}
-            sx={{ position: 'absolute', right: 8, top: 8, width: 32, height: 32, bgcolor: '#FFFFFF', color: C.blue, border: `1px solid ${C.line}`, '&:hover': { bgcolor: '#F8FAFC' }, animation: talking ? 'soulPulse 1s ease-in-out infinite' : 'none', '@keyframes soulPulse': { '50%': { transform: 'scale(1.12)' } } }}
-          >
-            <WaveIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      )}
-    </Box>
-  );
-}
-
 const DOT = { stop: SEV.error.color, anomaly: SEV.warn.color, risk: SEV.warn.color, question: SEV.ask.color, report: SEV.ok.color, cycle: SEV.info.color, handover: SEV.info.color, advice: SEV.info.color, operator: '#94A3B8' };
 const KIND = { advice: 'Advice', report: 'Report', operator: 'You said', stop: 'Stop', risk: 'Target risk', question: 'Question', anomaly: 'Sensor alert', cycle: 'Cycle time', handover: 'Handover', info: 'Info' };
 
@@ -753,6 +718,7 @@ function SaidList({ messages, onReplay, onAnatomy }) {
 // Schedule vs actual for this shift: good pieces of the shift plan, where the schedule is now, and the projected end.
 function Progress({ row, live, now }) {
   const t = useT();
+  const [open, setOpen] = useState(false); // the figures (actual, plan, projected) open above the bar
   // the shift forecast from the server: the same numbers the press says out loud and the handover writes
   const f = row.forecast ?? { good: 0, toNow: 0, plan: 0, target: 0, projected: 0 };
   const { good, projected } = f;
@@ -770,22 +736,32 @@ function Progress({ row, live, now }) {
   );
   return (
     <Card data-tour="kiosk-progress" sx={{ ...panel, py: 0.75, gridArea: 'progress' }}>
-      <Stack direction="row" alignItems="center" gap={1.5}>
-        <Typography fontWeight={700} fontSize={13} component="h2" noWrap>{t('Production progress')} · {t(live.shift.name)}</Typography>
-        <Typography variant="caption" color="text.secondary" noWrap sx={{ flex: 1, minWidth: 0 }}>
-          {duration(Math.max(0, live.shift.end - now))} {t('left')} · {num(plan.toNow)} {t('pcs due by now')} · {t('plan = planned time ÷ ideal cycle time')} ({row.idealCycleTime} s)
-        </Typography>
-        <Typography sx={{ fontSize: 16, fontWeight: 800, lineHeight: 1 }}>{Math.round(share * 100)}%</Typography>
-      </Stack>
-      <Box sx={{ position: 'relative', height: 8, my: 0.75, borderRadius: 4, bgcolor: '#E2E8F0', overflow: 'hidden' }} role="img" aria-label={`${t('Actual qty by now')} ${good} · ${t('Schedule plan')} ${plan.shift}`}>
-        <Box sx={{ position: 'absolute', inset: 0, width: `${Math.min(100, share * 100)}%`, bgcolor: k ? LEVELS[k].bar : C.blue, borderRadius: 4 }} />
-        <Box sx={{ position: 'absolute', top: 0, bottom: 0, left: `${plan.shift ? Math.min(100, (plan.toNow / plan.shift) * 100) : 0}%`, width: 2, bgcolor: C.ink }} />
-      </Box>
-      <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: 'repeat(3, minmax(0,1fr))' }}>
-        {stat(t('Actual Qty by Now'), num(good), t('pcs produced'), k ? LEVELS[k].color : C.ink)}
-        {stat(t('Schedule Plan'), num(plan.shift), t('pcs per shift'))}
-        {stat(t('Projected End Shift'), num(projected), `${num(Math.abs(diff))} ${t(diff < 0 ? 'pcs below target' : 'pcs above target')} (${num(f.target)})`, C.ink, diff < 0 ? LEVELS.below.color : LEVELS.good.color)}
-      </Box>
+      <ButtonBase
+        onClick={() => setOpen(!open)} aria-expanded={open} aria-label={t(open ? 'Hide the production figures' : 'Show the production figures')}
+        sx={{ display: 'block', width: '100%', textAlign: 'left', borderRadius: R.inner }}
+      >
+        {open && (
+          <Typography variant="caption" color="text.secondary" component="div" noWrap mb={0.5}>
+            {t(live.shift.name)} · {duration(Math.max(0, live.shift.end - now))} {t('left')} · {num(plan.toNow)} {t('pcs due by now')} · {t('plan = planned time ÷ ideal cycle time')} ({row.idealCycleTime} s)
+          </Typography>
+        )}
+        {open && (
+          <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: 'repeat(3, minmax(0,1fr))', pb: 1, mb: 0.75, borderBottom: `1px solid ${C.line}` }}>
+            {stat(t('Actual Qty by Now'), num(good), t('pcs produced'), k ? LEVELS[k].color : C.ink)}
+            {stat(t('Schedule Plan'), num(plan.shift), t('pcs per shift'))}
+            {stat(t('Projected End Shift'), num(projected), `${num(Math.abs(diff))} ${t(diff < 0 ? 'pcs below target' : 'pcs above target')} (${num(f.target)})`, C.ink, diff < 0 ? LEVELS.below.color : LEVELS.good.color)}
+          </Box>
+        )}
+        <Stack direction="row" alignItems="center" gap={1.5}>
+          <Typography fontWeight={700} fontSize={13} component="h2" noWrap>{t('Production progress')}</Typography>
+          <Box sx={{ position: 'relative', flex: 1, height: 8, borderRadius: 4, bgcolor: '#E2E8F0', overflow: 'hidden' }} role="img" aria-label={`${t('Actual qty by now')} ${good} · ${t('Schedule plan')} ${plan.shift}`}>
+            <Box sx={{ position: 'absolute', inset: 0, width: `${Math.min(100, share * 100)}%`, bgcolor: k ? LEVELS[k].bar : C.blue, borderRadius: 4 }} />
+            <Box sx={{ position: 'absolute', top: 0, bottom: 0, left: `${plan.shift ? Math.min(100, (plan.toNow / plan.shift) * 100) : 0}%`, width: 2, bgcolor: C.ink }} />
+          </Box>
+          <Typography sx={{ fontSize: 16, fontWeight: 800, lineHeight: 1 }}>{Math.round(share * 100)}%</Typography>
+          <FoldIcon sx={{ fontSize: 20, color: 'text.secondary', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 150ms' }} />
+        </Stack>
+      </ButtonBase>
     </Card>
   );
 }

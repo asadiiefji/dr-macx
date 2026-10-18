@@ -30,7 +30,10 @@ export function explain(e) {
   const m = String(e.message ?? '');
   if (e.status === 402 || /prepayment credits|billing/i.test(m)) return 'Google AI credits for this project are used up. Top up at https://ai.studio/projects, then try again.';
   if (e.status === 429 || /RESOURCE_EXHAUSTED|quota|rate limit/i.test(m)) return 'Google AI rate limit reached. Wait a minute and try again.';
-  if (e.status === 401 || e.status === 403 || /API key/i.test(m)) return 'The Google AI key was rejected. Check GEMINI_API_KEY.';
+  if (e.status === 401 || e.status === 403 || /API key/i.test(m))
+    return VERTEX
+      ? 'Vertex AI refused the call. Check that the service account has the Vertex AI User role and the Vertex AI API is enabled.'
+      : 'The Google AI key was rejected. Check GEMINI_API_KEY.';
   if (e.status === 404) return 'This AI model is not available. Check GEMINI_MODEL.';
   return null;
 }

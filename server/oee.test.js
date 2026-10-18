@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { badId } from './validate.js';
 import assert from 'node:assert/strict';
 import { currentShift, oee, onBreak, breakIn, touchesBreak, groupBuckets, excludePlanned, ZERO } from './oee.js';
 import { newRecorder, record } from './recorder.js';
@@ -310,4 +311,9 @@ test('last-15-min OEE and the sensor that found a stop', async () => {
   assert.equal(stopSensor(essential, 101).id, 'laserEye'); // no microphone: parts stopped coming
   assert.equal(stopSensor(premium, 0, [{ tonnage: [100, 100, 100, 112] }]).id, 'tonnage4'); // no alarm: the sensor out of limits
   assert.equal(stopSensor(premium, 0, [{ tonnage: [100, 100, 100, 100] }]).id, 'motorCurrent');
+});
+
+test('ids that would address another document are refused', () => {
+  for (const ok of ['prs-03', 'op-001', 'BD-HYD', '1792250842828']) assert.equal(badId(ok), false, ok);
+  for (const bad of ['prs-03/downtime/1', '.', '..', '', null, 42]) assert.equal(badId(bad), true, String(bad));
 });

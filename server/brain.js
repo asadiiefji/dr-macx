@@ -106,7 +106,7 @@ export function startBrain({ db, live, say, context, resolve }) {
       const everyMs = (live.settings().adviceEveryMin ?? 60) * 60e3;
       if (everyMs && row.status !== 'break' && now - (st.adviceCheck ?? 0) >= 60e3) {
         st.adviceCheck = now; // look at most once a minute
-        advice(row, everyMs).catch(log('advice'));
+        advice(row, everyMs).catch((e) => ((st.adviceCheck = Date.now() + 9 * 60e3), log('advice')(e))); // failed: try again in 10 min, not every minute
       }
 
       // hourly: the hour that just ended, once its bucket is written (flush runs every minute)

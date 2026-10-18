@@ -4,6 +4,7 @@ import { soulAsk, soulExplain, soulOptions, soulChat, translateTexts, explain, L
 import { speak } from './tts.js';
 import { hourlyTrend } from './bq.js';
 import { nodeNominal, pressDefaults } from './sensors.js';
+import { badId } from './validate.js';
 
 export const langOf = (l) => (LANGUAGES[l] ? l : 'en');
 const pct = (v) => (v == null ? null : Math.round(v * 1000) / 10);
@@ -79,7 +80,7 @@ export function soulRoutes(app, { db, live, list, resolve, eventsSince, repeatWi
   app.post('/api/soul/verify', async (req, res) => {
     const { machineId } = req.body ?? {};
     const code = typeof req.body?.code === 'string' ? req.body.code.trim().toUpperCase() : '';
-    if (typeof machineId !== 'string' || !machineId || !code) return res.status(400).json({ error: 'Pick a machine and enter your employee number.' });
+    if (badId(machineId) || !code) return res.status(400).json({ error: 'Pick a machine and enter your employee number.' });
     const machine = await db.doc(`machines/${machineId}`).get();
     if (!machine.exists || machine.data().active === false) return res.status(404).json({ error: 'This machine is not active in Dr. Macx.' });
     const ops = await db.collection('operators').where('code', '==', code).get();
@@ -91,6 +92,7 @@ export function soulRoutes(app, { db, live, list, resolve, eventsSince, repeatWi
   });
 
   // What the press has said, newest first, in the kiosk language (translated once, then cached on the message).
+  const translatePause = new Map(); // lang -> no translation attempt before this time (after a failure)
   app.get('/api/machines/:id/soul', async (req, res) => {
     const lang = langOf(req.query.lang);
     const limit = Math.min(200, Number(req.query.limit) || 40);
@@ -102,12 +104,13 @@ export function soulRoutes(app, { db, live, list, resolve, eventsSince, repeatWi
     const snap = await q.orderBy('at', 'desc').limit(limit).get();
     const docs = snap.docs.map((d) => ({ ref: d.ref, id: d.id, ...d.data() }));
     const missing = docs.filter((d) => d.lang !== lang && !d.i18n?.[lang]);
-    if (missing.length) {
+    if (missing.length && Date.now() >= (translatePause.get(lang) ?? 0)) {
       try {
         const out = await translateTexts(missing.map((d) => d.text), lang);
         await Promise.all(missing.map((d, i) => ((d.i18n = { ...d.i18n, [lang]: out[i] }), d.ref.update({ [`i18n.${lang}`]: out[i] }))));
       } catch (e) {
         console.error('soul translation failed:', e.message); // fall back to the original language
+        translatePause.set(lang, Date.now() + 60e3); // and let Gemini rest a minute: kiosks poll every few seconds
       }
     }
     res.json(docs.map(({ ref, i18n, ...d }) => ({ ...d, text: d.lang === lang ? d.text : i18n?.[lang] ?? d.text })));

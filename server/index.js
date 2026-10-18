@@ -1,7 +1,7 @@
 import express from 'express';
 import { Firestore, FieldValue } from '@google-cloud/firestore';
 import { fileURLToPath } from 'node:url';
-import { schemas, parseSettings, parseConfirm, DEFAULT_TARGETS, BREAK_CATEGORY } from './validate.js';
+import { schemas, parseSettings, parseConfirm, badId, DEFAULT_TARGETS, BREAK_CATEGORY } from './validate.js';
 import { startLive } from './live.js';
 import { currentShift, groupBuckets, oee, add, ZERO, touchesBreak, excludePlanned, buildTimeline } from './oee.js';
 import { withReasons, markRepeats, downtimeStats, REPEAT, pointsFor } from './analysis.js';
@@ -21,6 +21,8 @@ const app = express();
 app.use(express.json({ limit: '100kb' }));
 
 const list = async (col) => (await db.collection(col).get()).docs.map((d) => ({ id: d.id, ...d.data() }));
+
+for (const p of ['id', 'eventId']) app.param(p, (req, res, next, v) => (badId(v) ? res.status(404).json({ error: 'Not found.' }) : next()));
 
 app.get('/api/live', (req, res) => res.json(live.snapshot()));
 
@@ -58,8 +60,7 @@ app.put('/api/skills', async (req, res) => {
   const { operatorId, machineId } = req.body ?? {};
   const level = Number(req.body?.level);
   if (![0, 1, 2, 3].includes(level)) return res.status(400).json({ error: 'Skill level must be 0, 1, 2 or 3.' });
-  if (typeof operatorId !== 'string' || typeof machineId !== 'string' || !operatorId || !machineId)
-    return res.status(400).json({ error: 'operatorId and machineId are required.' });
+  if (badId(operatorId) || badId(machineId)) return res.status(400).json({ error: 'operatorId and machineId are required.' });
   const [op, mc] = await Promise.all([db.doc(`operators/${operatorId}`).get(), db.doc(`machines/${machineId}`).get()]);
   if (!op.exists || !mc.exists) return res.status(404).json({ error: 'Operator or machine not found.' });
   const ref = db.doc(`skills/${operatorId}__${machineId}`);
@@ -183,6 +184,7 @@ app.put('/api/machines/:id/downtime/:eventId', async (req, res) => {
     return res.status(400).json({ error: `An operator-break reason fits only a stop within ${breakToleranceMin} min of a scheduled break. Pick another reason.` });
   // The submitting operator must run this machine (skill level 2+), same rule as the Operators count on Machines.
   if (value.operatorId) {
+    if (badId(value.operatorId)) return res.status(400).json({ error: 'Unknown operator.' });
     const skill = await db.doc(`skills/${value.operatorId}__${req.params.id}`).get();
     if (!(skill.data()?.level >= 2)) return res.status(403).json({ error: 'This operator is not assigned to this machine (needs skill level 2 or higher).' });
   }
@@ -376,6 +378,12 @@ app.put('/api/:col/:id', (req, res) => save(req, res, req.params.id));
 app.delete('/api/:col/:id', async (req, res) => {
   const { col, id } = req.params;
   const ref = db.doc(`${col}/${id}`);
+  if (col === 'reasons') {
+    const code = (await ref.get()).data()?.code;
+    // ponytail: one query per machine (no collection-group index needed); fine for a plant's handful of machines
+    const used = code && (await Promise.all((await db.collection('machines').get()).docs.map((m) => m.ref.collection('downtime').where('reasonCode', '==', code).limit(1).get()))).some((q) => !q.empty);
+    if (used) return res.status(409).json({ error: `Reason ${code} is used by recorded stops, so it cannot be deleted: their history would lose its reason. Rename it instead.` });
+  }
   if (col === 'machines') await db.recursiveDelete(ref); // also its hours and downtime history
   const batch = db.batch();
   batch.delete(ref);
