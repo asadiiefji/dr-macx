@@ -18,13 +18,37 @@ export function duration(ms) {
 
 export const time = (ms) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+// The D with a pulse that draws the M (Dr. Macx). Icon = the D in a rounded square; DX = the D beside an X.
+const D_PATH = 'M14 10H64A46 46 0 0 1 110 56V64A46 46 0 0 1 64 110H14A4 4 0 0 1 10 106V14A4 4 0 0 1 14 10Z';
+const PULSE = 'M10 66H28L40 38L53 84L66 38L78 66H110';
+
+export function LogoIcon({ size = 30 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 120 120" aria-hidden="true">
+      <rect width="120" height="120" rx="26" fill={C.blue} />
+      <g transform="translate(23 23) scale(0.62)">
+        <path d={D_PATH} fill="#FFFFFF" />
+        <path d={PULSE} fill="none" stroke={C.blue} strokeWidth="10" strokeLinejoin="round" />
+      </g>
+    </svg>
+  );
+}
+
+export function LogoMark({ height = 44 }) {
+  return (
+    <svg height={height} viewBox="10 10 204 100" role="img" aria-label="Dr. Macx">
+      <path d={D_PATH} fill={C.blue} />
+      <path d={PULSE} fill="none" stroke="#FFFFFF" strokeWidth="8" strokeLinejoin="round" />
+      <polygon points="122,10 146,10 214,110 190,110" fill={C.blue} />
+      <polygon points="190,10 214,10 146,110 122,110" fill={C.blue} />
+    </svg>
+  );
+}
+
 export function Logo({ size = 30 }) {
   return (
     <Stack direction="row" alignItems="center" spacing={1.25}>
-      <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden="true">
-        <rect width="48" height="48" rx="12" fill={C.blue} />
-        <path d="M6 26h9l4-10 6 18 4-12 3 4h10" fill="none" stroke="#FFFFFF" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
+      <LogoIcon size={size} />
       <Typography component="span" sx={{ fontSize: 19, letterSpacing: '-0.01em', color: C.ink }}>
         <b style={{ fontWeight: 800 }}>Dr.</b> <span style={{ fontWeight: 600, color: C.blue }}>Macx</span>
       </Typography>

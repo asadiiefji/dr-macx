@@ -30,7 +30,7 @@ import PerfIcon from '@mui/icons-material/SpeedRounded';
 import QualIcon from '@mui/icons-material/VerifiedOutlined';
 import { BADGE, MachineStatus, SaidPanel, VoiceDialog, briefOf, factsOf } from './Pieces.jsx';
 import { api, useCollection, useGet, useLive } from '../api.js';
-import { Logo, StatusChip, duration, num } from '../ui.jsx';
+import { LogoMark, StatusChip, duration, num } from '../ui.jsx';
 import { C, LEVELS, level } from '../theme.js';
 import { useDictation } from '../StopConfirm.jsx';
 import { sensorsFor, useSensorCatalog, valueOf } from '../sensors.js';
@@ -114,7 +114,7 @@ function Gate({ session, onDone }) {
       <Card sx={{ width: '100%', maxWidth: 720 }}>
         <CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
           <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
-            <Logo />
+            <LogoMark />
             <Button component={RouterLink} to="/" startIcon={<BackIcon />}>{t('Back to Dr. Macx')}</Button>
           </Stack>
           <Typography variant="h4" component="h1" mt={3}>{t('Dr. Macx Live')}</Typography>
@@ -582,7 +582,7 @@ function AdviceNow({ machineId, lang, onDone }) {
 }
 
 // OEE now: the ring, then Availability / Performance / Quality as columns: the percentage with the figure behind it
-// (run time, cycle time, good parts) beside it, and a bar. In demo mode each column also has its simulation control.
+// (run time, cycle time, good parts) on the right, and a bar. In demo mode each column also has its simulation control.
 const FACTOR_ICON = { availability: AvailIcon, performance: PerfIcon, quality: QualIcon };
 function OeePanel({ row, ring, demo, lang, onAdvice }) {
   const t = useT();
@@ -614,20 +614,20 @@ function OeePanel({ row, ring, demo, lang, onAdvice }) {
             const v = row[f.key];
             return (
               <Box key={f.key} sx={{ flex: 1, minWidth: 0, px: 1.75, borderLeft: i ? `1px solid ${C.line}` : 'none' }}>
-                <Stack direction="row" alignItems="center" gap={0.75}>
-                  <Box sx={{ width: 24, height: 24, borderRadius: '6px', bgcolor: l?.bg ?? '#F1F5F9', display: 'grid', placeItems: 'center', flex: 'none' }}><Icon sx={{ fontSize: 16, color: l?.color ?? 'text.secondary' }} /></Box>
-                  <Typography color="text.secondary" noWrap fontSize={14}><Dual en={f.label} /></Typography>
+                <Stack direction="row" alignItems="center" gap={1}>
+                  <Box sx={{ width: 30, height: 30, borderRadius: '8px', bgcolor: l?.bg ?? '#F1F5F9', display: 'grid', placeItems: 'center', flex: 'none' }}><Icon sx={{ fontSize: 18, color: l?.color ?? 'text.secondary' }} /></Box>
+                  <Typography noWrap fontSize={16} color={C.ink}><Dual en={f.label} /></Typography>
                 </Stack>
-                <Stack direction="row" alignItems="center" gap={1.25} my={0.5} minWidth={0}>
-                  <Typography sx={{ fontSize: 24, fontWeight: 800, lineHeight: 1.2, flex: 'none' }}>
-                    {pctOf(v)}<Typography component="span" sx={{ fontSize: 15, fontWeight: 800 }}>%</Typography>
+                <Stack direction="row" alignItems="flex-end" justifyContent="space-between" gap={1} mt={0.75} mb={0.75} minWidth={0}>
+                  <Typography sx={{ fontSize: 28, fontWeight: 800, lineHeight: 1, flex: 'none' }}>
+                    {pctOf(v)}<Typography component="span" sx={{ fontSize: 17, fontWeight: 800 }}>%</Typography>
                   </Typography>
-                  <Typography color="text.secondary" sx={{ fontSize: 12, lineHeight: 1.3, minWidth: 0 }}>
-                    {t(f.sub)}<br /><b style={{ color: C.ink }}>{f.value}</b>
+                  <Typography color="text.secondary" sx={{ fontSize: 12, lineHeight: 1.3, minWidth: 0, textAlign: 'right' }}>
+                    {t(f.sub)}<br /><b style={{ color: C.ink, whiteSpace: 'nowrap' }}>{f.value}</b>
                   </Typography>
                 </Stack>
-                <Box sx={{ height: 8, borderRadius: 4, bgcolor: '#E2E8F0', overflow: 'hidden' }} role="img" aria-label={`${t(f.label)} ${pctOf(v)}%`}>
-                  <Box sx={{ height: '100%', width: `${Math.min(100, (v ?? 0) * 100)}%`, bgcolor: l?.ring ?? '#94A3B8', borderRadius: 4 }} />
+                <Box sx={{ height: 10, borderRadius: 5, bgcolor: '#E2E8F0', overflow: 'hidden' }} role="img" aria-label={`${t(f.label)} ${pctOf(v)}%`}>
+                  <Box sx={{ height: '100%', width: `${Math.min(100, (v ?? 0) * 100)}%`, bgcolor: l?.ring ?? '#94A3B8', borderRadius: 5 }} />
                 </Box>
                 {demo && row.sim && <Box mt={0.75}><FactorSim m={row} factor={f.key} sim={sim} /></Box>}
               </Box>
