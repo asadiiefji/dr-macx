@@ -7,6 +7,9 @@ import { GoogleGenAI } from '@google/genai';
 const VERTEX = process.env.GOOGLE_GENAI_USE_VERTEXAI === 'true';
 export const VERTEX_LOCATION = process.env.GOOGLE_CLOUD_LOCATION || 'global';
 export const MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+// Kiosk calls an operator waits for (ask, chat, explain, suggested answers): low thinking answers in ~2 s instead of ~7 s.
+// Stop analysis and handovers keep the model's full thinking. (thinkingLevel needs a Gemini 3 model.)
+const QUICK = { thinkingConfig: { thinkingLevel: 'low' } };
 const VIA = VERTEX ? `Vertex AI (${VERTEX_LOCATION})` : 'Gemini API';
 // GCP_PROJECT wins: local dev points GOOGLE_CLOUD_PROJECT at the Firestore emulator's demo project.
 const PROJECT = process.env.GCP_PROJECT || process.env.GOOGLE_CLOUD_PROJECT;
@@ -228,7 +231,7 @@ export async function soulAsk(context, lang, focus) {
   const res = await track('gemini', () => gemini().models.generateContent({
     model: MODEL,
     contents: JSON.stringify(context),
-    config: { systemInstruction: focus ? `${soulVoice(lang)}\n${focus}` : soulVoice(lang), responseMimeType: 'application/json', responseJsonSchema: ASK_SCHEMA, temperature: 0.4 },
+    config: { systemInstruction: focus ? `${soulVoice(lang)}\n${focus}` : soulVoice(lang), responseMimeType: 'application/json', responseJsonSchema: ASK_SCHEMA, temperature: 0.4, ...QUICK },
   }));
   return JSON.parse(res.text);
 }
@@ -287,6 +290,7 @@ export async function soulExplain(context, statement, lang) {
       responseMimeType: 'application/json',
       responseJsonSchema: EXPLAIN_SCHEMA,
       temperature: 0.3,
+      ...QUICK,
     },
   }));
   return JSON.parse(res.text);
@@ -346,6 +350,7 @@ export async function soulOptions(context, lang) {
       responseMimeType: 'application/json',
       responseJsonSchema: { type: 'object', properties: { options: { type: 'array', items: { type: 'string' } } }, required: ['options'] },
       temperature: 0.3,
+      ...QUICK,
     },
   }));
   return (JSON.parse(res.text).options ?? []).slice(0, 5);
@@ -363,6 +368,7 @@ export async function soulChat(context, messages, lang) {
     config: {
       systemInstruction: `${soulVoice(lang)}\nThe operator chats with you in the kiosk. Answer their question about you (the machine): what is happening, why, what to do. Quote only numbers from the data (shiftForecast for shift totals). If the data cannot answer, say what is missing. At most about 90 words, plain text, short sentences.`,
       temperature: 0.4,
+      ...QUICK,
     },
   }));
   return res.text;
