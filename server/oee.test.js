@@ -245,7 +245,7 @@ test('soul: target risk, hourly surprise and sensor anomalies', async () => {
   // even at the ideal 6 s with no more stops: 1,500 + 14,400 s / 6 = 3,900 < 4,080, so say so plainly
   assert.equal(r.best, 3900);
   assert.equal(r.reachable, false);
-  assert.match(riskText(r, 6), /can't be reached .* about 3,900/);
+  assert.match(riskText(r, 6), /out of reach; I will make about 3,000/);
   assert.doesNotMatch(riskText(r, 6), /every \d/); // no impossible pace asked for
   const ok = targetRisk(shift(2000)); // 2,000 + 2,400 = 4,400 possible: reachable, so the needed pace is fine
   assert.equal(ok.reachable, true);
@@ -258,7 +258,7 @@ test('soul: target risk, hourly surprise and sensor anomalies', async () => {
   const at0 = at(5);
   const causes = hourCauses([{ start: at0 + 60e3, end: at0 + 300e3, reason: 'Material jam in feeder' }, { start: at0 + 600e3, end: at0 + 900e3, reason: 'Material jam in feeder' }, { start: at0 + 1200e3, end: at0 + 1740e3, reason: 'Coil shortage' }], at0);
   assert.deepEqual(causes.map((c) => [c.reason, c.count, c.minutes]), [['Material jam in feeder', 2, 9], ['Coil shortage', 1, 9]]);
-  assert.match(surpriseText(at0, { expected: 400, actual: 310 }, causes), /I made 310 .* 2 × Material jam in feeder \(9 min\) and Coil shortage \(9 min\)\. Was that it\?/);
+  assert.match(surpriseText(at0, { expected: 400, actual: 310 }, causes), /^I made 310 of about 400 good pieces .*; was it Material jam in feeder\?$/);
 
   const prev = [{ plannedSec: 3600, total: 500, ng: 0 }, { plannedSec: 3600, total: 520, ng: 20 }];
   assert.equal(surpriseCheck({ plannedSec: 3600, total: 310, ng: 0 }, prev).surprise, true); // expected 500, got 310
@@ -273,7 +273,7 @@ test('soul: target risk, hourly surprise and sensor anomalies', async () => {
   const [a] = anomalies(press, mem, 31e3);
   assert.equal(a.sensor.node, 4);
   assert.equal(a.value, 110);
-  assert.match(anomalyText(m, a.sensor, a.value, a.state), /node 4 \(left rear\) reads 110\.0 tons, 10 percent above/);
+  assert.match(anomalyText(m, a.sensor, a.value, a.state), /^My tonnage node 4 is 10 percent above its share, /);
   assert.equal(anomalies(press, mem, 60e3).length, 0); // said already
   assert.equal(anomalies({ ...press, sensorStatus: { ...status, tonnage4: 'alarm' } }, mem, 90e3).length, 1); // escalated
   assert.equal(anomalies({ ...press, sensorStatus: status }, mem, 100e3).length, 0);

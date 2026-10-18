@@ -62,7 +62,8 @@ export function handoverRoutes(app, { db, live, say, shiftData }) {
       summary: out.summary, highlights: out.highlights, advice: out.advice, say: out.say,
     };
     await ref.set(doc);
-    await say(id, { kind: 'handover', text: out.say, emotion: k.oee * 100 >= targets.oee.target ? 'happy' : 'worried', data: { handover: String(shift.start) } });
+    // spoken and shown short; the full handover (out.say, summary, advice) stays in the handover record
+    await say(id, { kind: 'handover', text: `Hello ${nextShift}, last shift ran at ${Math.round(k.oee * 100)} percent OEE.`, emotion: k.oee * 100 >= targets.oee.target ? 'happy' : 'worried', data: { handover: String(shift.start) } });
   }
 
   // Every minute: hand over the shift that just ended (also right after a start, for the last shift).

@@ -23,7 +23,7 @@ export function startBrain({ db, live, say, context, resolve }) {
     // the sensor that found the stop is what the anatomy lights (deterministic; Gemini's part is only advice)
     const found = stopSensor(pressDefaults(row), stop.alarmCode, [before['5sBefore'], before['30sBefore']]);
     const data = { stopId: stop.id, alarmCode: stop.alarmCode, sensorsBeforeStop: before, sensor: found?.id ?? null, part: found?.part ?? null, node: found?.node ?? null };
-    let text = stopFallback(stop.start, stop.alarmCode, event?.reason);
+    let text = stopFallback(stop.start, stop.alarmCode);
     let extra = {};
     try {
       const ctx = await context(row.id);

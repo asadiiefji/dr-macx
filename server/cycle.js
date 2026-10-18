@@ -22,12 +22,7 @@ export function suggestCycle(m, best, now) {
   return { from: m.idealCycleTime, to: best.seconds, samples: best.samples, at: now, status: 'pending' };
 }
 
-export const cycleText = (s) =>
-  `Over the last three shifts my best steady stroke was ${s.to} seconds per part, but my master data says ${s.from} seconds. ` +
-  (s.to > s.from
-    ? 'So my performance looks better on paper than I can really run. '
-    : 'I can run faster than my master data says, so my performance is shown above what it really is. ') +
-  'A supervisor can approve the new ideal cycle time on the Machines page.';
+export const cycleText = (s) => `My real cycle time is ${s.to} seconds, not ${s.from}; a supervisor can update it.`;
 
 export function cycleRoutes(app, { db, live, say }) {
   // Minute rows from BigQuery; without BigQuery, the hour buckets (coarser, needs fewer samples).

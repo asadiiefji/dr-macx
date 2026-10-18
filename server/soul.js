@@ -153,6 +153,17 @@ export function soulRoutes(app, { db, live, list, resolve, eventsSince, repeatWi
     }
   });
 
+  // "Got it" on advice: marked as read for every kiosk, so the panel goes back to what still needs the operator.
+  app.post('/api/machines/:id/soul/:msgId/seen', async (req, res) => {
+    if (badId(req.params.msgId)) return res.status(400).json({ error: 'Bad message id.' });
+    const ref = messages(req.params.id).doc(req.params.msgId);
+    const doc = await ref.get();
+    if (!doc.exists) return res.status(404).json({ error: 'Message not found.' });
+    if (doc.data().kind !== 'advice') return res.status(400).json({ error: 'Only advice can be marked as read.' });
+    await ref.update({ seen: true });
+    res.json({ ok: true });
+  });
+
   // Kiosk user-interface labels in the kiosk language (Gemini, cached in memory per language and text).
   // ponytail: in-memory cache, refilled after a restart (the kiosk also keeps its own copy).
   const uiCache = new Map();

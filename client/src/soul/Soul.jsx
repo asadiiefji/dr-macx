@@ -28,7 +28,7 @@ import FoldIcon from '@mui/icons-material/KeyboardArrowUpRounded';
 import AvailIcon from '@mui/icons-material/BarChartRounded';
 import PerfIcon from '@mui/icons-material/SpeedRounded';
 import QualIcon from '@mui/icons-material/VerifiedOutlined';
-import { BADGE, MachineStatus, SaidPanel, VoiceDialog, briefOf, factsOf } from './Pieces.jsx';
+import { BADGE, MachineStatus, SaidPanel, VoiceDialog, briefOf, factsOf, firstSentence } from './Pieces.jsx';
 import { api, useCollection, useGet, useLive } from '../api.js';
 import { LogoMark, StatusChip, duration, num } from '../ui.jsx';
 import { C, LEVELS, level } from '../theme.js';
@@ -246,7 +246,7 @@ function Main({ session, onChange, onExit }) {
       if (m.kind === 'operator') return;
       // a tone first (different per kind), then the voice; a stop already rang when it appeared in the list
       const wait = voiceOn && m.kind !== 'stop' ? tone(m.kind) : 0;
-      setTimeout(() => voice.say(m.text), wait);
+      setTimeout(() => voice.say(firstSentence(m.text)), wait);
     });
   }, [messages.data, voice]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -293,7 +293,15 @@ function Main({ session, onChange, onExit }) {
   if (!row) return <Alert severity="warning" sx={{ m: 2 }}>{t('This machine is no longer monitored.')} <Button onClick={onExit}>{t('Pick another')}</Button></Alert>;
 
   const question = messages.data?.find((m) => m.needsAnswer && !m.answered && m.at >= live.shift.start);
-  const said = question ?? messages.data?.find((m) => m.kind !== 'operator'); // what the message panel shows
+  // what the message panel shows: an open question, else the latest message; advice marked "Got it" gives way to the
+  // latest stop, alert or target risk of this shift still unread, else to the machine's state
+  const latest = messages.data?.find((m) => m.kind !== 'operator');
+  const said = question ?? (latest && !latest.seen ? latest
+    : messages.data?.find((m) => ['stop', 'anomaly', 'risk'].includes(m.kind) && !m.seen && m.at >= live.shift.start));
+  const seen = async (m) => {
+    await api(`/machines/${row.id}/soul/${m.id}/seen`, { method: 'POST' }).catch(() => {});
+    messages.reload();
+  };
   const badge = BADGE[briefOf(said, row).badge]; // tints the circle behind the face
   const opened = openEv && (events.find((e) => e.id === openEv.id) ?? openEv);
   const waiting = events.filter((e) => e.stop || e.needsAnswer).length; // stops and questions waiting for the operator
@@ -317,7 +325,7 @@ function Main({ session, onChange, onExit }) {
     try {
       const msg = await api(`/machines/${machineId}/soul/ask`, { method: 'POST', body: { lang } });
       heard.current?.add(msg.id); // spoken here, so the history watcher does not say it again
-      voice.say(msg.text);
+      voice.say(firstSentence(msg.text));
       setAsked((a) => a && { msg });
       messages.reload();
     } catch (e) {
@@ -378,7 +386,7 @@ function Main({ session, onChange, onExit }) {
               </Box>
             </Box>
             <SaidPanel
-              said={said} row={row} now={now} talking={voice.talking} onReplay={(m) => voice.say(m.text)} hideChildren={progressOpen}
+              said={said} row={row} now={now} talking={voice.talking} onReplay={(m) => voice.say(firstSentence(m.text))} onSeen={seen} hideChildren={progressOpen}
               facts={factsOf([...pendingNow, ...(shiftStops.data?.events ?? [])], row, now)}
             >
               <Box data-tour="kiosk-actions" sx={{ display: 'grid', gap: 1, gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)' }}>
@@ -434,7 +442,7 @@ function Main({ session, onChange, onExit }) {
       {opened && (
         <EventDetail
           e={opened} row={row} sensors={sensors} reasons={reasons.rows} operator={operator} lang={lang}
-          onClose={() => setOpenEv(null)} onSaved={reload} onReplay={(m) => voice.say(m.text)} onAnswer={handlers.onAnswer}
+          onClose={() => setOpenEv(null)} onSaved={reload} onReplay={(m) => voice.say(firstSentence(m.text))} onAnswer={handlers.onAnswer}
         />
       )}
       <HistoryPopup
@@ -768,7 +776,7 @@ function AskPopup({ asked, emotion, voice, voiceOn, reduced, running, onAgain, o
         </Box>
       )}
       <Stack direction="row" gap={1} justifyContent="flex-end" mt={2}>
-        {msg && <Button startIcon={<ReplayIcon />} onClick={() => voice.say(msg.text)}>{t('Say it again')}</Button>}
+        {msg && <Button startIcon={<ReplayIcon />} onClick={() => voice.say(firstSentence(msg.text))}>{t('Say it again')}</Button>}
         {!asked.loading && <Button variant="outlined" startIcon={<ChatIcon />} onClick={onAgain}>{t('Ask again')}</Button>}
         <Button variant="contained" onClick={onClose}>{t('Close')}</Button>
       </Stack>

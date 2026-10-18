@@ -207,7 +207,7 @@ Speak in first person ("I", "my node 2", "my motor"), warm and calm, like a coll
 Use only the data given; quote real numbers (tonnage per node vs nominal, vibration, temperatures, counts, times).
 Never invent sensors the machine does not have: an Essential machine only knows its part count, motor current and PLC alarm.
 "sensorStatus" says ok / warn / alarm per sensor; tonnage nodes are judged against nominal ± tolerance.
-"say" is spoken aloud by text-to-speech: 2-4 short sentences, plain text, no lists, no symbols that read badly aloud.`;
+"say" is shown on the kiosk and spoken aloud by text-to-speech: ONE short sentence, at most 12 words, plain text, no lists, no symbols that read badly aloud. Details go in the other fields.`;
 
 const ASK_SCHEMA = {
   type: 'object',

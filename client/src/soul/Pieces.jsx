@@ -1,6 +1,6 @@
 // Pieces of the Dr. Macx Live kiosk: the machine status card, the panel with what the machine said (the current
 // issue, one fact, the action plan, the full message on request, three facts about this shift) and the answer dialog.
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link as RouterLink } from 'react-router';
 import { Alert, Box, Button, Card, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Link, Stack, TextField, Tooltip, Typography } from '@mui/material';
 import MicIcon from '@mui/icons-material/MicNoneOutlined';
@@ -79,7 +79,7 @@ const SENSOR_NEXT = {
   tonnage: 'Check the tie rod, gib and die seating at that corner.', vib: 'Check the bearing and mounting.', temp: 'Check cooling and lubrication.',
   acoustic: 'Check the die and stripper before it jams.', ioFaults: 'Check the proximity sensor on the I/O module page.',
 };
-const firstSentence = (x = '') => (x.match(/^[\s\S]*?[.!?](\s|$)/)?.[0] ?? x).trim();
+export const firstSentence = (x = '') => (x.match(/^[\s\S]*?[.!?](\s|$)/)?.[0] ?? x).trim();
 const hm = (ms) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 export const BADGE = {
   action: { sev: SEV.error, label: 'Needs action' },
@@ -255,21 +255,12 @@ export function VoiceDialog({ machineId, operator, lang, question, preset, quick
 // What the machine said last, short: a badge, the current issue, one fact and the action plan (a link when it is done
 // on another page), the full message on request, and three facts. children (the buttons) sit at the bottom; when the
 // opened message does not fit, or hideChildren is set, they step aside.
-export function SaidPanel({ said, row, now, talking, facts, onReplay, hideChildren, children }) {
+export function SaidPanel({ said, row, now, talking, facts, onReplay, onSeen, hideChildren, children }) {
   const t = useT();
-  const [open, setOpen] = useState(false);
-  const [crowded, setCrowded] = useState(false);
-  const col = useRef(null);
-  useEffect(() => setOpen(false), [said?.id]);
-  useLayoutEffect(() => {
-    if (!open) return setCrowded(false);
-    if (col.current && col.current.scrollHeight > col.current.clientHeight + 1) setCrowded(true);
-  }, [open]);
-  const toggle = () => setOpen(!open);
   const b = briefOf(said, row);
   const badge = BADGE[b.badge];
   return (
-    <Box ref={col} sx={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, minHeight: 0, overflowY: crowded ? 'auto' : 'visible' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, minHeight: 0 }}>
       <Stack direction="row" alignItems="center" gap={1.25} flexWrap="wrap">
         <Stack direction="row" alignItems="center" gap={0.75} sx={{ px: 1.25, py: 0.5, borderRadius: INNER, bgcolor: badge.sev.bg }}>
           <badge.sev.Icon sx={{ fontSize: 18, color: badge.sev.color }} />
@@ -293,28 +284,20 @@ export function SaidPanel({ said, row, now, talking, facts, onReplay, hideChildr
         )}
       </Stack>
       <Typography component="h2" sx={{ fontSize: { xs: 21, lg: 26 }, fontWeight: 800, lineHeight: 1.2, letterSpacing: '-0.02em', color: C.ink }}>{t(b.issue)}</Typography>
-      {open ? (
-        <Typography sx={{ fontSize: 15, lineHeight: 1.5, color: 'text.secondary' }}>{said?.text}</Typography>
-      ) : (
-        <>
-          {b.fact && <Typography sx={{ fontSize: 15.5, lineHeight: 1.45, color: 'text.secondary', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{t(b.fact)}</Typography>}
-          {b.next && (
-            <Stack direction="row" gap={0.75} alignItems="flex-start">
-              <NextIcon sx={{ fontSize: 20, color: C.blue, mt: 0.1, flex: 'none' }} />
-              <Typography sx={{ fontSize: 15, fontWeight: 700, color: C.blueDark, lineHeight: 1.4 }}>
-                {t('Action plan')}:{' '}
-                {b.link ? <Link component={RouterLink} to={b.link} sx={{ color: C.blue, fontWeight: 700 }}>{t(b.next)}</Link> : t(b.next)}
-              </Typography>
-            </Stack>
-          )}
-        </>
+      {b.fact && <Typography sx={{ fontSize: 15.5, lineHeight: 1.45, color: 'text.secondary', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{t(b.fact)}</Typography>}
+      {b.next && (
+        <Stack direction="row" gap={0.75} alignItems="flex-start">
+          <NextIcon sx={{ fontSize: 20, color: C.blue, mt: 0.1, flex: 'none' }} />
+          <Typography sx={{ fontSize: 15, fontWeight: 700, color: C.blueDark, lineHeight: 1.4 }}>
+            {t('Action plan')}:{' '}
+            {b.link ? <Link component={RouterLink} to={b.link} sx={{ color: C.blue, fontWeight: 700 }}>{t(b.next)}</Link> : t(b.next)}
+          </Typography>
+        </Stack>
       )}
-      {said && (
-        <Typography component="button" type="button" onClick={toggle} sx={{ alignSelf: 'flex-start', p: 0, border: 0, bgcolor: 'transparent', cursor: 'pointer', color: 'text.secondary', fontSize: 12.5, textDecoration: 'underline', '&:focus-visible': { outline: `2px solid ${C.blue}` } }}>
-          {t(open ? 'Show the short version' : 'Read the full message')}
-        </Typography>
+      {said?.kind === 'advice' && !said.seen && onSeen && (
+        <Button size="small" variant="outlined" startIcon={<CheckIcon />} onClick={() => onSeen(said)} sx={{ alignSelf: 'flex-start' }}>{t('Got it')}</Button>
       )}
-      <Box sx={{ display: crowded ? 'none' : 'grid', gap: 1, p: 1, borderRadius: '12px', bgcolor: '#F1F5F9', gridTemplateColumns: { xs: '1fr', sm: `repeat(${facts.length}, minmax(0,1fr))` } }}>
+      <Box sx={{ display: 'grid', gap: 1, p: 1, borderRadius: '12px', bgcolor: '#F1F5F9', gridTemplateColumns: { xs: '1fr', sm: `repeat(${facts.length}, minmax(0,1fr))` } }}>
         {facts.map(({ Icon, sev, big, small }) => (
           <Stack key={`${big}-${small}`} direction="row" gap={1.25} alignItems="center" sx={{ px: 1.25, py: 0.75, borderRadius: INNER, bgcolor: '#FFFFFF', minWidth: 0 }}>
             <Box sx={{ width: 34, height: 34, borderRadius: '50%', bgcolor: sev.bg, display: 'grid', placeItems: 'center', flex: 'none' }}><Icon sx={{ fontSize: 18, color: sev.color }} /></Box>
@@ -325,7 +308,7 @@ export function SaidPanel({ said, row, now, talking, facts, onReplay, hideChildr
           </Stack>
         ))}
       </Box>
-      {children && <Box sx={{ display: crowded || hideChildren ? 'none' : 'block', mt: 'auto', pt: 1 }}>{children}</Box>}
+      {children && <Box sx={{ display: hideChildren ? 'none' : 'block', mt: 'auto', pt: 1 }}>{children}</Box>}
     </Box>
   );
 }
